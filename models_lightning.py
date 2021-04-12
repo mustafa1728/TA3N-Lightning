@@ -749,4 +749,21 @@ class VideoModel(pl.LightningModule):
 		return attn_relation_source, output_source, output_source_2, pred_domain_all_source[::-1], feat_all_source[::-1], attn_relation_target, output_target, output_target_2, pred_domain_all_target[::-1], feat_all_target[::-1] # reverse the order of feature list due to some multi-gpu issues
 
 
-	
+	self.optimizerName = 'SGD'
+	self.loss_type = 'nll'
+	self.lr = 0.0001
+	self.momentum = 0.9
+	self.weight_decay = 1e-4
+	def configure_optimizers(self):
+
+		if self.optimizerName == 'SGD':
+			print(Fore.YELLOW + 'using SGD')
+			optimizer = torch.optim.SGD(self.parameters(), self.lr, momentum=self.momentum, weight_decay=self.weight_decay, nesterov=True)
+		elif self.optimizerName == 'Adam':
+			print(Fore.YELLOW + 'using Adam')
+			optimizer = torch.optim.Adam(self.parameters(), self.lr, weight_decay=self.weight_decay)
+		else:
+			print(Back.RED + 'optimizer not support or specified!!!')
+			exit()
+		
+		return optimizer
