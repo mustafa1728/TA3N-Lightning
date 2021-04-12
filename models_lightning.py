@@ -94,6 +94,8 @@ class VideoModel(pl.LightningModule):
 		self.n_attn = n_attn
 		self.use_attn_frame = use_attn_frame
 
+
+
 		if new_length is None:
 			self.new_length = 1 if modality == "RGB" else 5
 		else:
@@ -116,6 +118,13 @@ class VideoModel(pl.LightningModule):
 		self._enable_pbn = partial_bn
 		if partial_bn:
 			self.partialBN(True)
+
+
+		self.optimizerName = 'SGD'
+		self.loss_type = 'nll'
+		self.lr = 0.0001
+		self.momentum = 0.9
+		self.weight_decay = 1e-4
 
 	def _prepare_DA(self, num_class, base_model, modality): # convert the model to DA framework
 		if base_model == 'c3d': # C3D mode: in construction...
@@ -749,11 +758,7 @@ class VideoModel(pl.LightningModule):
 		return attn_relation_source, output_source, output_source_2, pred_domain_all_source[::-1], feat_all_source[::-1], attn_relation_target, output_target, output_target_2, pred_domain_all_target[::-1], feat_all_target[::-1] # reverse the order of feature list due to some multi-gpu issues
 
 
-	self.optimizerName = 'SGD'
-	self.loss_type = 'nll'
-	self.lr = 0.0001
-	self.momentum = 0.9
-	self.weight_decay = 1e-4
+	
 	def configure_optimizers(self):
 
 		if self.optimizerName == 'SGD':
