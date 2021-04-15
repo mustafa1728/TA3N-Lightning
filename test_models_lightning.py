@@ -148,6 +148,7 @@ data_gen = tqdm(data_loader)
 
 output = []
 attn_values = torch.Tensor()
+print('\n', Fore.CYAN + 'data loaded from: ', args.test_target_data+".pkl")
 
 class AverageMeter(object):
 	"""Computes and stores the average and current value"""
@@ -344,5 +345,6 @@ def validate(val_loader, verb_model, criterion, num_class, noun_model=None, val_
 		   .format(top1_verb=top1_verb, top1_noun=top1_noun, top1_action=top1_action, top5_verb=top5_verb, top5_noun=top5_noun, top5_action=top5_action, loss=losses)))
 	return top1_action.avg, top1_verb.avg, top1_noun.avg
 
-
+print(Fore.CYAN + 'starting validation......')
 validate(data_loader, verb_net, criterion, num_class, noun_model=noun_net, val_labels=data_set.labels_available)
+print(Fore.CYAN + 'validation complete')
