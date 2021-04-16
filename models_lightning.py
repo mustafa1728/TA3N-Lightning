@@ -9,7 +9,7 @@ import torchvision
 import TRNmodule_lightning
 import math
 
-
+import os
 import time
 from loss import *
 
@@ -150,18 +150,21 @@ class VideoModel(pl.LightningModule):
 		self.gamma = 1
 		self.mu = 0
 
-		self.train_metric == "all"
+		self.train_metric = "all"
 		self.dann_warmup = False
+
+		path_exp = self.modality + '/'
+		if not os.path.isdir(path_exp):
+			os.makedirs(path_exp)
 		self.writer_train = SummaryWriter(path_exp + '/tensorboard_train')  # for tensorboardX
 
-		self.baseline_type = 'frame'
 		self.pretrain_source = False
 		self.clip_gradient = None
 
 		self.dis_DA = 'none'
 		self.use_target = 'none'
 		self.add_fc = 1
-		self.place_dis[l] = ['Y', 'Y', 'N']
+		self.place_dis = ['Y', 'Y', 'N']
 		self.pred_normalize = 'N'
 		self.add_loss_DA = 'none'
 		self.print_freq = 10
@@ -692,8 +695,8 @@ class VideoModel(pl.LightningModule):
 		pred_fc_target = (self.fc_classifier_target_verb(feat_fc_target) if self.share_params == 'N' else self.fc_classifier_source_verb(feat_fc_target),
 						  self.fc_classifier_target_noun(feat_fc_target) if self.share_params == 'N' else self.fc_classifier_source_noun(feat_fc_target))
 		if self.baseline_type == 'frame':
-			feat_all_source.append(pred_fc_source.view((batch_source, num_segments) + pred_fc_source.size()[-1:])) # reshape ==> 1st dim is the batch size
-			feat_all_target.append(pred_fc_target.view((batch_target, num_segments) + pred_fc_target.size()[-1:]))
+			feat_all_source.append(pred_fc_source[0].view((batch_source, num_segments) + pred_fc_source[0].size()[-1:])) # reshape ==> 1st dim is the batch size
+			feat_all_target.append(pred_fc_target[0].view((batch_target, num_segments) + pred_fc_target[0].size()[-1:]))
 
 		### aggregate the frame-based features to video-based features ###
 		if self.frame_aggregation == 'avgpool' or self.frame_aggregation == 'rnn':
@@ -1224,7 +1227,7 @@ class VideoModel(pl.LightningModule):
 
 
 	def validation_step(self, batch, batch_idx):
-		
+		pass
 	### Will probably need to override this ###
 	# def validation_epoch_end(self, training_step_outputs):
 		# evaluate on validation set
