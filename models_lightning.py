@@ -19,6 +19,8 @@ from colorama import init
 from colorama import Fore, Back, Style
 
 from tensorboardX import SummaryWriter
+import shutil
+from torch.nn.utils import clip_grad_norm_
 
 torch.manual_seed(1)
 torch.cuda.manual_seed_all(1)
@@ -75,6 +77,7 @@ class VideoModel(pl.LightningModule):
 				use_attn='TransAttn', n_attn=1, use_attn_frame='none',
 				share_params='Y'):
 		super(VideoModel, self).__init__()
+		self.num_class = num_class
 		self.modality = modality
 		self.train_segments = train_segments
 		self.val_segments = val_segments
@@ -90,6 +93,7 @@ class VideoModel(pl.LightningModule):
 		self.add_fc = add_fc
 		self.fc_dim = fc_dim
 		self.share_params = share_params
+		self.verbose = verbose
 
 		# RNN
 		self.n_layers = n_rnn
@@ -153,10 +157,11 @@ class VideoModel(pl.LightningModule):
 		self.train_metric = "all"
 		self.dann_warmup = False
 
-		path_exp = self.modality + '/'
-		if not os.path.isdir(path_exp):
-			os.makedirs(path_exp)
-		self.writer_train = SummaryWriter(path_exp + '/tensorboard_train')  # for tensorboardX
+		self.path_exp = self.modality + '/'
+		if not os.path.isdir(self.path_exp):
+			os.makedirs(self.path_exp)
+		self.writer_train = SummaryWriter(self.path_exp + '/tensorboard_train')  # for tensorboardX
+		self.writer_val = SummaryWriter(self.path_exp + '/tensorboard_val')  # for tensorboardX
 
 		self.pretrain_source = False
 		self.clip_gradient = None
@@ -170,6 +175,41 @@ class VideoModel(pl.LightningModule):
 		self.print_freq = 10
 		self.show_freq = 10
 		self.ens_DA = 'none'
+
+		self.batch_time = AverageMeter()
+		self.data_time = AverageMeter()
+		self.losses_a = AverageMeter()  # adversarial loss
+		self.losses_d = AverageMeter()  # discrepancy loss
+		self.losses_e_verb = AverageMeter()
+		self.losses_e_noun = AverageMeter()
+		self.losses_s = AverageMeter()  # ensemble loss
+		self.losses_c = AverageMeter()
+		self.losses_c_verb = AverageMeter()  # classification loss
+		self.losses_c_noun = AverageMeter()  # classification loss
+		self.losses = AverageMeter()
+		self.top1_verb = AverageMeter()
+		self.top5_verb = AverageMeter()
+		self.top1_noun = AverageMeter()
+		self.top5_noun = AverageMeter()
+		self.top1_action = AverageMeter()
+		self.top5_action = AverageMeter()
+
+		self.batch_time_val = AverageMeter()
+		self.losses_val = AverageMeter()
+		self.top1_verb_val = AverageMeter()
+		self.top5_verb_val = AverageMeter()
+		self.top1_noun_val = AverageMeter()
+		self.top5_noun_val = AverageMeter()
+		self.top1_action_val = AverageMeter()
+		self.top5_action_val = AverageMeter()
+
+		self.end = time.time()
+		self.end_val = time.time()
+
+		self.tensorboard = True
+		self.arch = "resnet50"
+		self.save_model = False
+		self.labels_available = True
 
 	def _prepare_DA(self, num_class, base_model, modality): # convert the model to DA framework
 		if base_model == 'c3d': # C3D mode: in construction...
@@ -848,10 +888,10 @@ class VideoModel(pl.LightningModule):
 		batch_target_ori = target_size_ori[0]
 		# add dummy tensors to keep the same batch size for each epoch (for the last epoch)
 		if batch_source_ori < self.batch_size[0]:
-			source_data_dummy = torch.zeros(args.batch_size[0] - batch_source_ori, source_size_ori[1], source_size_ori[2])
+			source_data_dummy = torch.zeros(self.batch_size[0] - batch_source_ori, source_size_ori[1], source_size_ori[2])
 			source_data = torch.cat((source_data, source_data_dummy))
 		if batch_target_ori < self.batch_size[1]:
-			target_data_dummy = torch.zeros(args.batch_size[1] - batch_target_ori, target_size_ori[1], target_size_ori[2])
+			target_data_dummy = torch.zeros(self.batch_size[1] - batch_target_ori, target_size_ori[1], target_size_ori[2])
 			target_data = torch.cat((target_data, target_data_dummy))
 
 
@@ -865,10 +905,10 @@ class VideoModel(pl.LightningModule):
 		target_label_noun = target_label[1] # pytorch 0.4.X
 
 		if self.baseline_type == 'frame':
-			source_label_verb_frame = source_label_verb.unsqueeze(1).repeat(1,args.num_segments).view(-1) # expand the size for all the frames
-			source_label_noun_frame = source_label_noun.unsqueeze(1).repeat(1,args.num_segments).view(-1) # expand the size for all the frames
-			target_label_verb_frame = target_label_verb.unsqueeze(1).repeat(1, args.num_segments).view(-1)
-			target_label_noun_frame = target_label_noun.unsqueeze(1).repeat(1, args.num_segments).view(-1)
+			source_label_verb_frame = source_label_verb.unsqueeze(1).repeat(1, self.train_segments).view(-1) # expand the size for all the frames
+			source_label_noun_frame = source_label_noun.unsqueeze(1).repeat(1, self.train_segments).view(-1) # expand the size for all the frames
+			target_label_verb_frame = target_label_verb.unsqueeze(1).repeat(1, self.train_segments).view(-1)
+			target_label_noun_frame = target_label_noun.unsqueeze(1).repeat(1, self.train_segments).view(-1)
 
 		label_source_verb = source_label_verb_frame if self.baseline_type == 'frame' else source_label_verb  # determine the label for calculating the loss function
 		label_target_verb = target_label_verb_frame if self.baseline_type == 'frame' else target_label_verb
@@ -878,7 +918,7 @@ class VideoModel(pl.LightningModule):
 		#====== pre-train source data ======#
 		if self.pretrain_source:
 			#------ forward pass data again ------#
-			_, out_source, out_source_2, _, _, _, _, _, _, _ = model(source_data, target_data, beta_new, mu, is_train=True, reverse=False)
+			_, out_source, out_source_2, _, _, _, _, _, _, _ = self.model(source_data, target_data, beta_new, mu, is_train=True, reverse=False)
 
 			# ignore dummy tensors
 			out_source_verb = out_source[0][:batch_source_ori]
@@ -911,8 +951,8 @@ class VideoModel(pl.LightningModule):
 			loss.backward()
 
 			if self.clip_gradient is not None:
-				total_norm = clip_grad_norm_(model.parameters(), args.clip_gradient)
-				if total_norm > args.clip_gradient and args.verbose:
+				total_norm = clip_grad_norm_(self.parameters(), self.clip_gradient)
+				if total_norm > self.clip_gradient and self.verbose:
 					print("clipping gradient: {} with coef {}".format(total_norm, args.clip_gradient / total_norm))
 
 			self.optimizer.step()
@@ -1093,10 +1133,10 @@ class VideoModel(pl.LightningModule):
 			#loss += gamma * 0.5*(loss_entropy_verb + loss_entropy_noun)
 		# measure accuracy and record loss
 		pred_verb = out_verb
-		prec1_verb, prec5_verb = accuracy(pred_verb.data, label_verb, topk=(1, 5))
+		prec1_verb, prec5_verb = self.accuracy(pred_verb.data, label_verb, topk=(1, 5))
 		pred_noun = out_noun
-		prec1_noun, prec5_noun = accuracy(pred_noun.data, label_noun, topk=(1, 5))
-		prec1_action, prec5_action = multitask_accuracy((pred_verb.data, pred_noun.data), (label_verb, label_noun), topk=(1, 5))
+		prec1_noun, prec5_noun = self.accuracy(pred_noun.data, label_noun, topk=(1, 5))
+		prec1_action, prec5_action = self.multitask_accuracy((pred_verb.data, pred_noun.data), (label_verb, label_noun), topk=(1, 5))
 
 
 		self.losses.update(loss.item())
@@ -1151,7 +1191,7 @@ class VideoModel(pl.LightningModule):
 				self.epoch_number, i, self.batch_size[0] * self.epochs, batch_time=self.batch_time, data_time=self.data_time, alpha=self.alpha, beta=beta_new, gamma=self.gamma, mu=self.mu,
 				loss=self.losses, loss_verb=self.losses_c_verb, loss_noun=self.losses_c_noun, loss_d=self.losses_d, loss_a=self.losses_a,
 				loss_e_verb=self.losses_e_verb, loss_e_noun=self.losses_e_noun, loss_s=self.losses_s, top1_verb=self.top1_verb,
-				top1_noun=self.top1_noun, top5_verb=self.top5_verb, top5_noun=self.top5_noun, top1_action=self.top1_action, top5_action=top5_action,
+				top1_noun=self.top1_noun, top5_verb=self.top5_verb, top5_noun=self.top5_noun, top1_action=self.top1_action, top5_action=self.top5_action,
 				lr=self.optimizer.param_groups[0]['lr'])
 
 			if i % self.show_freq == 0:
@@ -1202,86 +1242,245 @@ class VideoModel(pl.LightningModule):
 		# feat_source_display = feat_source_display[indicies_source]
 		# feat_target_display = feat_target_display[indicies_target]		
 		
-		self.batch_time = AverageMeter()
-		self.data_time = AverageMeter()
-		self.losses_a = AverageMeter()  # adversarial loss
-		self.losses_d = AverageMeter()  # discrepancy loss
-		self.losses_e_verb = AverageMeter()
-		self.losses_e_noun = AverageMeter()
-		self.losses_s = AverageMeter()  # ensemble loss
-		self.losses_c = AverageMeter()
-		self.losses_c_verb = AverageMeter()  # classification loss
-		self.losses_c_noun = AverageMeter()  # classification loss
-		self.losses = AverageMeter()
-		self.top1_verb = AverageMeter()
-		self.top5_verb = AverageMeter()
-		self.top1_noun = AverageMeter()
-		self.top5_noun = AverageMeter()
-		self.top1_action = AverageMeter()
-		self.top5_action = AverageMeter()
+		self.batch_time.reset()
+		self.data_time.reset()
+		self.losses_a.reset()  # adversarial loss
+		self.losses_d.reset()  # discrepancy loss
+		self.losses_e_verb.reset()
+		self.losses_e_noun.reset()
+		self.losses_s.reset()  # ensemble loss
+		self.losses_c.reset()
+		self.losses_c_verb.reset()  # classification loss
+		self.losses_c_noun.reset()  # classification loss
+		self.losses.reset()
+		self.top1_verb.reset()
+		self.top5_verb.reset()
+		self.top1_noun.reset()
+		self.top5_noun.reset()
+		self.top1_action.reset()
+		self.top5_action.reset()
 
 		if self.no_partialbn:
 			self.model.module.partialBN(False)
 		else:
 			self.model.module.partialBN(True)
 
+	def accuracy(self, output, target, topk=(1,)):
+		"""Computes the precision@k for the specified values of k"""
+		maxk = max(topk)
+		batch_size = target.size(0)
 
+		_, pred = output.topk(maxk, 1, True, True)
+		pred = pred.t()
+		correct = pred.eq(target.view(1, -1).expand_as(pred))
+
+		res = []
+		for k in topk:
+			correct_k = correct[:k].reshape(-1).float().sum(0)
+			res.append(correct_k.mul_(100.0 / batch_size))
+		return res
+	
+	def multitask_accuracy(self, outputs, labels, topk=(1,)):
+		"""
+		Args:
+			outputs: tuple(torch.FloatTensor), each tensor should be of shape
+				[batch_size, class_count], class_count can vary on a per task basis, i.e.
+				outputs[i].shape[1] can be different to outputs[j].shape[j].
+			labels: tuple(torch.LongTensor), each tensor should be of shape [batch_size]
+			topk: tuple(int), compute accuracy at top-k for the values of k specified
+				in this parameter.
+		Returns:
+			tuple(float), same length at topk with the corresponding accuracy@k in.
+		"""
+		max_k = int(np.max(topk))
+		task_count = len(outputs)
+		batch_size = labels[0].size(0)
+		all_correct = torch.zeros(max_k, batch_size).type(torch.ByteTensor)
+		if torch.cuda.is_available():
+			all_correct = all_correct.cuda()
+		for output, label in zip(outputs, labels):
+			_, max_k_idx = output.topk(max_k, dim=1, largest=True, sorted=True)
+			# Flip batch_size, class_count as .view doesn't work on non-contiguous
+			max_k_idx = max_k_idx.t()
+			correct_for_task = max_k_idx.eq(label.view(1, -1).expand_as(max_k_idx))
+			all_correct.add_(correct_for_task)
+
+		accuracies = []
+		for k in topk:
+			all_tasks_correct = torch.ge(all_correct[:k].float().sum(0), task_count)
+			accuracy_at_k = float(all_tasks_correct.float().sum(0) * 100.0 / batch_size)
+			accuracies.append(accuracy_at_k)
+		return tuple(accuracies)
+		
 	def validation_step(self, batch, batch_idx):
-		pass
+
+		(val_data, val_label, _) = batch
+		i = batch_idx
+
+		val_size_ori = val_data.size()  # original shape
+		batch_val_ori = val_size_ori[0]
+
+		# add dummy tensors to keep the same batch size for each epoch (for the last epoch)
+		if batch_val_ori < self.batch_size[0]:
+			val_data_dummy = torch.zeros(self.batch_size[0] - batch_val_ori, val_size_ori[1], val_size_ori[2])
+			val_data = torch.cat((val_data, val_data_dummy))
+
+		# add dummy tensors to make sure batch size can be divided by gpu #
+		gpu_count = 1
+		if val_data.size(0) % gpu_count != 0:
+			val_data_dummy = torch.zeros(gpu_count - val_data.size(0) % gpu_count, val_data.size(1), val_data.size(2))
+			val_data = torch.cat((val_data, val_data_dummy))
+
+		val_label_verb = val_label[0]
+		val_label_noun = val_label[1]
+		with torch.no_grad():
+
+			if self.baseline_type == 'frame':
+				val_label_verb_frame = val_label_verb.unsqueeze(1).repeat(1,self.val_segments).view(-1) # expand the size for all the frames
+				val_label_noun_frame = val_label_noun.unsqueeze(1).repeat(1, self.val_segments).view(-1)  # expand the size for all the frames
+
+			# compute output
+			_, _, _, _, _, attn_val, out_val, out_val_2, pred_domain_val, feat_val = self.model(val_data, val_data, [0]*len(self.beta), 0, is_train=False, reverse=False)
+
+			# ignore dummy tensors
+			attn_val, out_val, out_val_2, pred_domain_val, feat_val = removeDummy(attn_val, out_val, out_val_2, pred_domain_val, feat_val, batch_val_ori)
+
+			# measure accuracy and record loss
+			label_verb = val_label_verb_frame if self.baseline_type == 'frame' else val_label_verb
+			label_noun = val_label_noun_frame if self.baseline_type == 'frame' else val_label_noun
+
+			# store the embedding
+			if self.tensorboard:
+				feat_val_display = feat_val[1] if i == 0 else torch.cat((feat_val_display, feat_val[1]), 0)
+				label_val_verb_display = label_verb if i == 0 else torch.cat((label_val_verb_display, label_verb), 0)
+				label_val_noun_display = label_noun if i == 0 else torch.cat((label_val_noun_display, label_noun), 0)
+
+			pred_verb = out_val[0]
+			pred_noun = out_val[1]
+
+			if self.baseline_type == 'tsn':
+				pred_verb = pred_verb.view(val_label.size(0), -1, self.num_class).mean(dim=1) # average all the segments (needed when num_segments != val_segments)
+				pred_noun = pred_noun.view(val_label.size(0), -1, self.num_class).mean(dim=1) # average all the segments (needed when num_segments != val_segments)
+
+			loss_verb = self.criterion(pred_verb, label_verb)
+			loss_noun = self.criterion(pred_noun, label_noun)
+			if self.train_metric == "all":
+				loss = 0.5 * (loss_verb + loss_noun)
+			elif self.train_metric == "noun":
+				loss = loss_noun  # 0.5*(loss_verb+loss_noun)
+			elif self.train_metric == "verb":
+				loss = loss_verb  # 0.5*(loss_verb+loss_noun)
+			else:
+				raise Exception("invalid metric to train")
+			prec1_verb, prec5_verb = self.accuracy(pred_verb.data, label_verb, topk=(1, 5))
+			prec1_noun, prec5_noun = self.accuracy(pred_noun.data, label_noun, topk=(1, 5))
+			prec1_action, prec5_action = self.multitask_accuracy((pred_verb.data, pred_noun.data), (label_verb, label_noun),
+															topk=(1, 5))
+
+			self.losses_val.update(loss.item(), out_val[0].size(0))
+			self.top1_verb_val.update(prec1_verb.item(), out_val[0].size(0))
+			self.top5_verb_val.update(prec5_verb.item(), out_val[0].size(0))
+			self.top1_noun_val.update(prec1_noun.item(), out_val[1].size(0))
+			self.top5_noun_val.update(prec5_noun.item(), out_val[1].size(0))
+			self.top1_action_val.update(prec1_action, out_val[1].size(0))
+			self.top5_action_val.update(prec5_action, out_val[1].size(0))
+
+			# measure elapsed time
+			self.batch_time_val.update(time.time() - self.end_val)
+			self.end_val = time.time()
+
+			if i % self.print_freq == 0:
+				line = 'Test: [{0}][{1}/{2}]\t' + \
+					  'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t' + \
+					  'Loss {loss.val:.4f} ({loss.avg:.4f})\t' + \
+					  'Prec@1 verb {top1_verb.val:.3f} ({top1_verb.avg:.3f})\t' + \
+					  'Prec@1 noun {top1_noun.val:.3f} ({top1_noun.avg:.3f})\t' + \
+					   'Prec@1 action {top1_action.val:.3f} ({top1_action.avg:.3f})\t' + \
+					   'Prec@5 verb {top5_verb.val:.3f} ({top5_verb.avg:.3f})\t' + \
+					   'Prec@5 noun{top5_noun.val:.3f} ({top5_noun.avg:.3f})\t' + \
+					   'Prec@5 action{top5_action.val:.3f} ({top5_action.avg:.3f})\t'
+
+				line = line.format(
+					   self.epoch_number, i, self.batch_size[0] * self.epochs, batch_time=self.batch_time_val, loss=self.losses_val,
+					   top1_verb=self.top1_verb_val, top5_verb=self.top5_verb_val, top1_noun=self.top1_noun_val, top5_noun=self.top5_noun_val,
+						top1_action=self.top1_action_val, top5_action=self.top5_action_val)
+
+				if i % self.show_freq == 0:
+					print(line)
+
+				self.log('%s\n' % line)
+		return self.losses 
+			
 	### Will probably need to override this ###
-	# def validation_epoch_end(self, training_step_outputs):
+	def validation_epoch_end(self, training_step_outputs):
+
+		print(('Testing Results: Prec@1 verb {top1_verb.avg:.3f}  Prec@1 noun {top1_noun.avg:.3f} Prec@1 action {top1_action.avg:.3f} Prec@5 verb {top5_verb.avg:.3f} Prec@5 noun {top5_noun.avg:.3f} Prec@5 action {top5_action.avg:.3f} Loss {loss.avg:.5f}'
+		   .format(top1_verb=self.top1_verb_val, top1_noun=self.top1_noun_val, top1_action=self.top1_action_val, top5_verb=self.top5_verb_val, top5_noun=self.top5_noun_val, top5_action=self.top5_action_val, loss=self.losses_val)))
+
+		
+
+		self.model.eval()
+
+		self.end_val = time.time()
 		# evaluate on validation set
-		# if self.current_epoch % self.eval_freq == 0 or self.current_epoch == self.epochs:
-		# 	if target_set.labels_available:
-				
-		# 		### stuff hacked ###
-		# 		num_class = []
-		# 		_, target_loader = batch
-		# 		### stuff hacked end ###
 
-		# 		prec1_val, prec1_verb_val, prec1_noun_val = validate(target_loader, model, self.criterion, num_class, self.epoch_number, val_file, writer_val)
-		# 		# remember best prec@1 and save checkpoint
-		# 		if self.train_metric == "all":
-		# 			prec1 = prec1_val
-		# 		elif self.train_metric == "noun":
-		# 			prec1 = prec1_noun_val
-		# 		elif self.train_metric == "verb":
-		# 			prec1 = prec1_verb_val
-		# 		else:
-		# 			raise Exception("invalid metric to train")
-		# 		is_best = prec1 > best_prec1
-		# 		if is_best:
-		# 			best_prec1 = prec1_val
+		if self.current_epoch % self.eval_freq == 0 or self.current_epoch == self.epochs:
+			if self.labels_available:
 
-		# 		line_update = ' ==> updating the best accuracy' if is_best else ''
-		# 		line_best = "Best score {} vs current score {}".format(best_prec1, prec1) + line_update
-		# 		print(Fore.YELLOW + line_best)
-		# 		val_short_file.write('%.3f\n' % prec1)
+				prec1_val, prec1_verb_val, prec1_noun_val = self.top1_action_val.avg, self.top1_verb_val.avg, self.top1_noun_val.avg
 
-		# 		best_prec1 = max(prec1, best_prec1)
 
-		# 		if args.tensorboard:
-		# 			writer_val.add_text('Best_Accuracy', str(best_prec1), epoch)
-		# 		if args.save_model:
-		# 			save_checkpoint({
-		# 				'epoch': self.epoch_number,
-		# 				'arch': args.arch,
-		# 				'state_dict': model.state_dict(),
-		# 				'optimizer' : self.optimizer.state_dict(),
-		# 				'best_prec1': best_prec1,
-		# 				'prec1': prec1,
-		# 			}, is_best, path_exp)
+				# remember best prec@1 and save checkpoint
+				if self.train_metric == "all":
+					prec1 = prec1_val
+				elif self.train_metric == "noun":
+					prec1 = prec1_noun_val
+				elif self.train_metric == "verb":
+					prec1 = prec1_verb_val
+				else:
+					raise Exception("invalid metric to train")
+				is_best = prec1 > best_prec1
+				if is_best:
+					best_prec1 = prec1_val
 
-		# 	else:
-		# 		save_checkpoint({
-		# 			'epoch': self.epoch_number,
-		# 			'arch': args.arch,
-		# 			'state_dict': model.state_dict(),
-		# 			'optimizer': self.optimizer.state_dict(),
-		# 			'best_prec1':  0.0,
-		# 			'prec1': 0.0,
-		# 		}, False, path_exp)
+				line_update = ' ==> updating the best accuracy' if is_best else ''
+				line_best = "Best score {} vs current score {}".format(best_prec1, prec1) + line_update
+				print(Fore.YELLOW + line_best)
+				# val_short_file.write('%.3f\n' % prec1)
 
+				best_prec1 = max(prec1, best_prec1)
+
+				if self.tensorboard:
+					self.writer_val.add_text('Best_Accuracy', str(best_prec1), self.epoch_number)
+				if self.save_model:
+					save_checkpoint({
+						'epoch': self.epoch_number,
+						'arch': self.arch,
+						'state_dict': self.model.state_dict(),
+						'optimizer' : self.optimizer.state_dict(),
+						'best_prec1': best_prec1,
+						'prec1': prec1,
+					}, is_best, self.path_exp)
+
+			else:
+				save_checkpoint({
+					'epoch': self.epoch_number,
+					'arch': self.arch,
+					'state_dict': self.model.state_dict(),
+					'optimizer': self.optimizer.state_dict(),
+					'best_prec1':  0.0,
+					'prec1': 0.0,
+				}, False, self.path_exp)
+
+
+		self.batch_time_val.reset()
+		self.losses_val.reset()
+		self.top1_verb_val.reset()
+		self.top5_verb_val.reset()
+		self.top1_noun_val.reset()
+		self.top5_noun_val.reset()
+		self.top1_action_val.reset()
+		self.top5_action_val.reset()
 
 	### Not Sure about the testing ###		
 	def test_step(self, batch, batch_idx):
@@ -1305,139 +1504,6 @@ class AverageMeter(object):
 		self.count += n
 		self.avg = self.sum / self.count
 
-def validate(val_loader, model, criterion, num_class, epoch, log, tensor_writer):
-	batch_time = AverageMeter()
-	losses = AverageMeter()
-	top1_verb = AverageMeter()
-	top5_verb = AverageMeter()
-	top1_noun = AverageMeter()
-	top5_noun = AverageMeter()
-	top1_action = AverageMeter()
-	top5_action = AverageMeter()
-
-	# switch to evaluate mode
-	model.eval()
-
-	end = time.time()
-
-	# initialize the embedding
-	if args.tensorboard:
-		feat_val_display = None
-		label_val_verb_display = None
-		label_val_noun_display = None
-
-	for i, (val_data, val_label, _) in enumerate(val_loader):
-
-		val_size_ori = val_data.size()  # original shape
-		batch_val_ori = val_size_ori[0]
-
-		# add dummy tensors to keep the same batch size for each epoch (for the last epoch)
-		if batch_val_ori < args.batch_size[2]:
-			val_data_dummy = torch.zeros(args.batch_size[2] - batch_val_ori, val_size_ori[1], val_size_ori[2])
-			val_data = torch.cat((val_data, val_data_dummy))
-
-		# add dummy tensors to make sure batch size can be divided by gpu #
-		if val_data.size(0) % gpu_count != 0:
-			val_data_dummy = torch.zeros(gpu_count - val_data.size(0) % gpu_count, val_data.size(1), val_data.size(2))
-			val_data = torch.cat((val_data, val_data_dummy))
-
-		val_label_verb = val_label[0].cuda(non_blocking=True)
-		val_label_noun = val_label[1].cuda(non_blocking=True)
-		with torch.no_grad():
-
-			if args.baseline_type == 'frame':
-				val_label_verb_frame = val_label_verb.unsqueeze(1).repeat(1,args.num_segments).view(-1) # expand the size for all the frames
-				val_label_noun_frame = val_label_noun.unsqueeze(1).repeat(1, args.num_segments).view(-1)  # expand the size for all the frames
-
-			# compute output
-			_, _, _, _, _, attn_val, out_val, out_val_2, pred_domain_val, feat_val = model(val_data, val_data, [0]*len(args.beta), 0, is_train=False, reverse=False)
-
-			# ignore dummy tensors
-			attn_val, out_val, out_val_2, pred_domain_val, feat_val = removeDummy(attn_val, out_val, out_val_2, pred_domain_val, feat_val, batch_val_ori)
-
-			# measure accuracy and record loss
-			label_verb = val_label_verb_frame if args.baseline_type == 'frame' else val_label_verb
-			label_noun = val_label_noun_frame if args.baseline_type == 'frame' else val_label_noun
-
-			# store the embedding
-			if args.tensorboard:
-				feat_val_display = feat_val[1] if i == 0 else torch.cat((feat_val_display, feat_val[1]), 0)
-				label_val_verb_display = label_verb if i == 0 else torch.cat((label_val_verb_display, label_verb), 0)
-				label_val_noun_display = label_noun if i == 0 else torch.cat((label_val_noun_display, label_noun), 0)
-
-			pred_verb = out_val[0]
-			pred_noun = out_val[1]
-
-			if args.baseline_type == 'tsn':
-				pred_verb = pred_verb.view(val_label.size(0), -1, num_class).mean(dim=1) # average all the segments (needed when num_segments != val_segments)
-				pred_noun = pred_noun.view(val_label.size(0), -1, num_class).mean(dim=1) # average all the segments (needed when num_segments != val_segments)
-
-			loss_verb = criterion(pred_verb, label_verb)
-			loss_noun = criterion(pred_noun, label_noun)
-			if args.train_metric == "all":
-				loss = 0.5 * (loss_verb + loss_noun)
-			elif args.train_metric == "noun":
-				loss = loss_noun  # 0.5*(loss_verb+loss_noun)
-			elif args.train_metric == "verb":
-				loss = loss_verb  # 0.5*(loss_verb+loss_noun)
-			else:
-				raise Exception("invalid metric to train")
-			prec1_verb, prec5_verb = accuracy(pred_verb.data, label_verb, topk=(1, 5))
-			prec1_noun, prec5_noun = accuracy(pred_noun.data, label_noun, topk=(1, 5))
-			prec1_action, prec5_action = multitask_accuracy((pred_verb.data, pred_noun.data), (label_verb, label_noun),
-															topk=(1, 5))
-
-			losses.update(loss.item(), out_val[0].size(0))
-			top1_verb.update(prec1_verb.item(), out_val[0].size(0))
-			top5_verb.update(prec5_verb.item(), out_val[0].size(0))
-			top1_noun.update(prec1_noun.item(), out_val[1].size(0))
-			top5_noun.update(prec5_noun.item(), out_val[1].size(0))
-			top1_action.update(prec1_action, out_val[1].size(0))
-			top5_action.update(prec5_action, out_val[1].size(0))
-
-			# measure elapsed time
-			batch_time.update(time.time() - end)
-			end = time.time()
-
-			if i % args.print_freq == 0:
-				line = 'Test: [{0}][{1}/{2}]\t' + \
-					  'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t' + \
-					  'Loss {loss.val:.4f} ({loss.avg:.4f})\t' + \
-					  'Prec@1 verb {top1_verb.val:.3f} ({top1_verb.avg:.3f})\t' + \
-					  'Prec@1 noun {top1_noun.val:.3f} ({top1_noun.avg:.3f})\t' + \
-					   'Prec@1 action {top1_action.val:.3f} ({top1_action.avg:.3f})\t' + \
-					   'Prec@5 verb {top5_verb.val:.3f} ({top5_verb.avg:.3f})\t' + \
-					   'Prec@5 noun{top5_noun.val:.3f} ({top5_noun.avg:.3f})\t' + \
-					   'Prec@5 action{top5_action.val:.3f} ({top5_action.avg:.3f})\t'
-
-				line = line.format(
-					   epoch, i, len(val_loader), batch_time=batch_time, loss=losses,
-					   top1_verb=top1_verb, top5_verb=top5_verb, top1_noun=top1_noun, top5_noun=top5_noun,
-						top1_action=top1_action, top5_action=top5_action)
-
-				if i % args.show_freq == 0:
-					print(line)
-
-				log.write('%s\n' % line)
-
-	if args.tensorboard:  # update the embedding every iteration
-		# embedding
-		n_iter_val = epoch * len(val_loader)
-		tensor_writer.add_scalar("acc/verb", top1_verb.avg, epoch)
-		tensor_writer.add_scalar("acc/noun", top1_noun.avg, epoch)
-		tensor_writer.add_scalar("acc/action", top1_action.avg, epoch)
-
-		if epoch == 20:
-			tensor_writer.add_embedding(feat_val_display, metadata=label_val_verb_display.data, global_step=epoch, tag='validation')
-
-
-	print(('Testing Results: Prec@1 verb {top1_verb.avg:.3f}  Prec@1 noun {top1_noun.avg:.3f} Prec@1 action {top1_action.avg:.3f} Prec@5 verb {top5_verb.avg:.3f} Prec@5 noun {top5_noun.avg:.3f} Prec@5 action {top5_action.avg:.3f} Loss {loss.avg:.5f}'
-		   .format(top1_verb=top1_verb, top1_noun=top1_noun, top1_action=top1_action, top5_verb=top5_verb, top5_noun=top5_noun, top5_action=top5_action, loss=losses)))
-
-	log.write(('Testing Results: Prec@1 verb {top1_verb.avg:.3f}  Prec@1 noun {top1_noun.avg:.3f} Prec@1 action {top1_action.avg:.3f} Prec@5 verb {top5_verb.avg:.3f} Prec@5 noun {top5_noun.avg:.3f} Prec@5 action {top5_action.avg:.3f} Loss {loss.avg:.5f}\n'
-		   .format(top1_verb=top1_verb, top1_noun=top1_noun, top1_action=top1_action, top5_verb=top5_verb, top5_noun=top5_noun, top5_action=top5_action, loss=losses)))
-
-	return top1_action.avg, top1_verb.avg, top1_noun.avg
 
 def save_checkpoint(state, is_best, path_exp, filename='checkpoint.pth.tar'):
 
