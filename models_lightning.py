@@ -4,6 +4,7 @@ from torch.nn.init import *
 from torch.autograd import Function
 import torch.nn as nn
 import pytorch_lightning as pl
+
 import torch.nn.functional as F
 import torchvision
 import TRNmodule_lightning
@@ -854,7 +855,12 @@ class VideoModel(pl.LightningModule):
 			optimizer = torch.optim.Adam(self.parameters(), self.lr, weight_decay=self.weight_decay)
 		else:
 			print(Back.RED + 'optimizer not support or specified!!!')
-			exit()
+			
+		if self.loss_type = 'nll':
+			self.criterion = torch.nn.CrossEntropyLoss().cuda()
+			self.criterion_domain = torch.nn.CrossEntropyLoss().cuda()
+		else:
+			raise ValueError("Unknown loss type")
 		
 		return optimizer
 
