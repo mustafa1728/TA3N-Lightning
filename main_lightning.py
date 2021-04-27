@@ -96,7 +96,7 @@ def main():
 
 	if args.optimizer == 'SGD':
 		print(Fore.YELLOW + 'using SGD')
-        model.optimizerName = 'SGD'
+		model.optimizerName = 'SGD'
 	elif args.optimizer == 'Adam':
 		print(Fore.YELLOW + 'using Adam')
 		model.optimizerName = 'Adam'
@@ -148,7 +148,7 @@ def main():
 		raise ValueError("Unknown loss type")
 
     # --- Parameters ---#
-    model.beta = args.beta
+	model.beta = args.beta
 	model.gamma = args.gamma
 	model.mu = args.mu
 
@@ -201,8 +201,8 @@ def main():
 	print(Fore.CYAN + 'start training......')
 	
 
-    trainer = Trainer(gpus = gpu_count)
-    trainer.fit(model, (source_loader, target_loader))
+	trainer = Trainer(gpus = gpu_count)
+	trainer.fit(model, (source_loader, target_loader))
 	
 	end_train = time.time()
 	print(Fore.CYAN + 'total training time:', end_train - start_train)
@@ -229,9 +229,9 @@ def main():
 		writer_train.close()
 		writer_val.close()
 
-	if args.save_attention >= 0:
-		np.savetxt('attn_source_' + str(args.save_attention) + '.log', attn_source_all.cpu().detach().numpy(), fmt="%s")
-		np.savetxt('attn_target_' + str(args.save_attention) + '.log', attn_target_all.cpu().detach().numpy(), fmt="%s")
+	# if args.save_attention >= 0:
+	# 	np.savetxt('attn_source_' + str(args.save_attention) + '.log', attn_source_all.cpu().detach().numpy(), fmt="%s")
+	# 	np.savetxt('attn_target_' + str(args.save_attention) + '.log', attn_target_all.cpu().detach().numpy(), fmt="%s")
 
 if __name__ == '__main__':
 	main()

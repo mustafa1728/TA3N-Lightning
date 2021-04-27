@@ -14,6 +14,8 @@ import pandas as pd
 from torch.autograd import Variable
 from sklearn.metrics import confusion_matrix
 
+from pytorch_lightning import Trainer
+
 from dataset import TSNDataSet
 from models_lightning import VideoModel
 from utils.utils import plot_confusion_matrix
@@ -103,7 +105,7 @@ verb_checkpoint = torch.load(args.weights)
 
 verb_base_dict = {'.'.join(k.split('.')[1:]): v for k,v in list(verb_checkpoint['state_dict'].items())}
 verb_net.load_state_dict(verb_base_dict)
-verb_net = torch.nn.DataParallel(verb_net.cuda())
+# verb_net = torch.nn.DataParallel(verb_net)
 verb_net.eval()
 
 if args.noun_weights is not None:
@@ -119,7 +121,7 @@ if args.noun_weights is not None:
 
 	noun_base_dict = {'.'.join(k.split('.')[1:]): v for k,v in list(noun_checkpoint['state_dict'].items())}
 	noun_net.load_state_dict(noun_base_dict)
-	noun_net = torch.nn.DataParallel(noun_net.cuda())
+	# noun_net = torch.nn.DataParallel(noun_net.cuda())
 	noun_net.eval()
 else:
 	noun_net = None
@@ -150,201 +152,10 @@ output = []
 attn_values = torch.Tensor()
 print('\n', Fore.CYAN + 'data loaded from: ', args.test_target_data+".pkl")
 
-class AverageMeter(object):
-	"""Computes and stores the average and current value"""
-	def __init__(self):
-		self.reset()
 
-	def reset(self):
-		self.val = 0
-		self.avg = 0
-		self.sum = 0
-		self.count = 0
-
-	def update(self, val, n=1):
-		self.val = val
-		self.sum += val * n
-		self.count += n
-		self.avg = self.sum / self.count
-
-def accuracy(output, target, topk=(1,)):
-	"""Computes the precision@k for the specified values of k"""
-	maxk = max(topk)
-	batch_size = target.size(0)
-
-	_, pred = output.topk(maxk, 1, True, True)
-	pred = pred.t()
-	correct = pred.eq(target.view(1, -1).expand_as(pred))
-
-	res = []
-	for k in topk:
-		correct_k = correct[:k].reshape(-1).float().sum(0)
-		res.append(correct_k.mul_(100.0 / batch_size))
-	return res
-
-def multitask_accuracy(outputs, labels, topk=(1,)):
-    """
-    Args:
-        outputs: tuple(torch.FloatTensor), each tensor should be of shape
-            [batch_size, class_count], class_count can vary on a per task basis, i.e.
-            outputs[i].shape[1] can be different to outputs[j].shape[j].
-        labels: tuple(torch.LongTensor), each tensor should be of shape [batch_size]
-        topk: tuple(int), compute accuracy at top-k for the values of k specified
-            in this parameter.
-    Returns:
-        tuple(float), same length at topk with the corresponding accuracy@k in.
-    """
-    max_k = int(np.max(topk))
-    task_count = len(outputs)
-    batch_size = labels[0].size(0)
-    all_correct = torch.zeros(max_k, batch_size).type(torch.ByteTensor)
-    if torch.cuda.is_available():
-        all_correct = all_correct.cuda()
-    for output, label in zip(outputs, labels):
-        _, max_k_idx = output.topk(max_k, dim=1, largest=True, sorted=True)
-        # Flip batch_size, class_count as .view doesn't work on non-contiguous
-        max_k_idx = max_k_idx.t()
-        correct_for_task = max_k_idx.eq(label.view(1, -1).expand_as(max_k_idx))
-        all_correct.add_(correct_for_task)
-
-    accuracies = []
-    for k in topk:
-        all_tasks_correct = torch.ge(all_correct[:k].float().sum(0), task_count)
-        accuracy_at_k = float(all_tasks_correct.float().sum(0) * 100.0 / batch_size)
-        accuracies.append(accuracy_at_k)
-    return tuple(accuracies)
-
-def removeDummy(attn, out_1, out_2, pred_domain, feat, batch_size):
-	attn = attn[:batch_size]
-	if isinstance(out_1, (list, tuple)):
-		out_1 = (out_1[0][:batch_size], out_1[1][:batch_size])
-	else:
-		out_1 = out_1[:batch_size]
-	out_2 = out_2[:batch_size]
-	pred_domain = [pred[:batch_size] for pred in pred_domain]
-	feat = [f[:batch_size] for f in feat]
-
-	return attn, out_1, out_2, pred_domain, feat
-
-def dummyData(batch_val_ori, val_size_ori, val_data):
-	# add dummy tensors to keep the same batch size for each epoch (for the last epoch)
-	if batch_val_ori < args.bS:
-		val_data_dummy = torch.zeros(args.bS - batch_val_ori, val_size_ori[1], val_size_ori[2])
-		val_data = torch.cat((val_data, val_data_dummy))
-
-	# add dummy tensors to make sure batch size can be divided by gpu #
-	if val_data.size(0) % gpu_count != 0:
-		val_data_dummy = torch.zeros(gpu_count - val_data.size(0) % gpu_count, val_data.size(1), val_data.size(2))
-		val_data = torch.cat((val_data, val_data_dummy))
-	return val_data
-
-results_dict = {}
-def validate(val_loader, verb_model, criterion, num_class, noun_model=None, val_labels=False):
-	batch_time = AverageMeter()
-	losses = AverageMeter()
-	top1_verb = AverageMeter()
-	top5_verb = AverageMeter()
-	top1_noun = AverageMeter()
-	top5_noun = AverageMeter()
-	top1_action = AverageMeter()
-	top5_action = AverageMeter()
-
-	# switch to evaluate mode
-	verb_model.eval()
-	if noun_model is not None:
-		noun_model.eval()
-
-	end = time.time()
-
-	verb_predictions = []
-	noun_predictions = []
-	results_dict = {}
-	for i, (val_data_all, val_label, val_id) in enumerate(val_loader):
-
-		if noun_model is not None:
-
-			val_size_ori = val_data_all[0].size()  # original shape
-			batch_val_ori = val_size_ori[0]
-			val_data = dummyData(batch_val_ori, val_size_ori, val_data_all[0])
-			val_data_noun = dummyData(batch_val_ori, val_size_ori, val_data_all[1])
-		else:
-			val_size_ori = val_data_all.size()  # original shape
-			batch_val_ori = val_size_ori[0]
-			val_data = dummyData(batch_val_ori,val_size_ori,val_data_all)
-
-
-		val_label_verb = val_label[0].cuda(non_blocking=True)
-		val_label_noun = val_label[1].cuda(non_blocking=True)
-		with torch.no_grad():
-
-			if args.baseline_type == 'frame':
-				val_label_verb_frame = val_label_verb.unsqueeze(1).repeat(1,args.num_segments).view(-1) # expand the size for all the frames
-				val_label_noun_frame = val_label_noun.unsqueeze(1).repeat(1, args.num_segments).view(-1)  # expand the size for all the frames
-
-			# compute output
-			_, _, _, _, _, attn_val_verb, out_val_verb, out_val_2_verb, pred_domain_val_verb, feat_val_verb = verb_model(val_data, val_data, [0,0,0], 0, is_train=False, reverse=False)
-			# ignore dummy tensors
-			attn_val_verb, out_val_verb, out_val_2_verb, pred_domain_val_verb, feat_val_verb = removeDummy(attn_val_verb, out_val_verb, out_val_2_verb, pred_domain_val_verb, feat_val_verb, batch_val_ori)
-			pred_verb = out_val_verb[0]
-
-			if noun_model is not None:
-				_, _, _, _, _, attn_val_noun, out_val_noun, out_val_2_noun, pred_domain_val_noun, feat_val_noun = noun_model(val_data_noun, val_data_noun, [0,0,0], 0, is_train=False, reverse=False)
-				attn_val_noun, out_val_noun, out_val_2_noun, pred_domain_val_noun, feat_val_noun = removeDummy(attn_val_noun, out_val_noun, out_val_2_noun, pred_domain_val_noun, feat_val_noun, batch_val_ori)
-				pred_noun = out_val_noun[1]
-			else:
-				pred_noun = out_val_verb[1]
-			pred_verb_cpu = pred_verb.cpu().tolist()
-			pred_noun_cpu = pred_noun.cpu().tolist()
-			for p_verb, p_noun, id in zip(pred_verb_cpu, pred_noun_cpu, val_id):
-				verb_dict = {}
-				noun_dict = {}
-				for i, prob in enumerate(p_verb):
-					verb_dict[str(i)] = prob
-				for i, prob in enumerate(p_noun):
-					noun_dict[str(i)] = prob
-				results_dict[id] = {'verb': verb_dict, 'noun': noun_dict}
-
-			noun_predictions.append(torch.argmax(pred_noun, dim=-1).cpu().numpy())
-			verb_predictions.append(torch.argmax(pred_verb, dim=-1).cpu().numpy())
-
-			# measure accuracy and record loss
-			label_verb = val_label_verb_frame if args.baseline_type == 'frame' else val_label_verb
-			label_noun = val_label_noun_frame if args.baseline_type == 'frame' else val_label_noun
-
-			if args.baseline_type == 'tsn':
-				pred_verb = pred_verb.view(val_label.size(0), -1, num_class).mean(dim=1) # average all the segments (needed when num_segments != val_segments)
-				pred_noun = pred_noun.view(val_label.size(0), -1, num_class).mean(dim=1) # average all the segments (needed when num_segments != val_segments)
-
-			loss_verb = criterion(pred_verb, label_verb)
-			loss_noun = criterion(pred_noun, label_noun)
-			loss = 0.5*(loss_verb + loss_noun)
-			prec1_verb, prec5_verb = accuracy(pred_verb.data, label_verb, topk=(1, 5))
-			prec1_noun, prec5_noun = accuracy(pred_noun.data, label_noun, topk=(1, 5))
-			prec1_action, prec5_action = multitask_accuracy((pred_verb.data, pred_noun.data), (label_verb, label_noun),
-															topk=(1, 5))
-
-			losses.update(loss.item(), out_val_verb[0].size(0))
-			top1_verb.update(prec1_verb.item(), out_val_verb[0].size(0))
-			top5_verb.update(prec5_verb.item(), out_val_verb[0].size(0))
-			top1_noun.update(prec1_noun.item(), out_val_verb[1].size(0))
-			top5_noun.update(prec5_noun.item(), out_val_verb[1].size(0))
-			top1_action.update(prec1_action, out_val_verb[1].size(0))
-			top5_action.update(prec5_action, out_val_verb[1].size(0))
-
-			# measure elapsed time
-			batch_time.update(time.time() - end)
-			end = time.time()
-
-	with open(args.result_json, "w") as f:
-		json.dump({'results_target':results_dict, "version": "0.2",
-  "challenge": "domain_adaptation","sls_pt": 0,
-  "sls_tl": 0,
-  "sls_td": 0}, f)
-	if val_labels:
-		print(('Testing Results: Prec@1 verb {top1_verb.avg:.3f}  Prec@1 noun {top1_noun.avg:.3f} Prec@1 action {top1_action.avg:.3f} Prec@5 verb {top5_verb.avg:.3f} Prec@5 noun {top5_noun.avg:.3f} Prec@5 action {top5_action.avg:.3f} Loss {loss.avg:.5f}'
-		   .format(top1_verb=top1_verb, top1_noun=top1_noun, top1_action=top1_action, top5_verb=top5_verb, top5_noun=top5_noun, top5_action=top5_action, loss=losses)))
-	return top1_action.avg, top1_verb.avg, top1_noun.avg
 
 print(Fore.CYAN + 'starting validation......')
-validate(data_loader, verb_net, criterion, num_class, noun_model=noun_net, val_labels=data_set.labels_available)
+trainer = Trainer()
+
+trainer.test(model = verb_net, test_dataloaders=data_loader, ckpt_path=args.weights, verbose = True)
 print(Fore.CYAN + 'validation complete')

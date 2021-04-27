@@ -77,6 +77,7 @@ class VideoModel(pl.LightningModule):
 				n_rnn=1, rnn_cell='LSTM', n_directions=1, n_ts=5,
 				use_attn='TransAttn', n_attn=1, use_attn_frame='none',
 				share_params='Y'):
+		super().__init__()
 		super(VideoModel, self).__init__()
 		self.num_class = num_class
 		self.modality = modality
@@ -211,6 +212,12 @@ class VideoModel(pl.LightningModule):
 		self.arch = "resnet50"
 		self.save_model = False
 		self.labels_available = True
+
+		if self.loss_type == 'nll':
+			self.criterion = torch.nn.CrossEntropyLoss().cuda()
+			self.criterion_domain = torch.nn.CrossEntropyLoss().cuda()
+		else:
+			raise ValueError("Unknown loss type")
 
 	def _prepare_DA(self, num_class, base_model, modality): # convert the model to DA framework
 		if base_model == 'c3d': # C3D mode: in construction...
@@ -855,12 +862,6 @@ class VideoModel(pl.LightningModule):
 			optimizer = torch.optim.Adam(self.parameters(), self.lr, weight_decay=self.weight_decay)
 		else:
 			print(Back.RED + 'optimizer not support or specified!!!')
-			
-		if self.loss_type = 'nll':
-			self.criterion = torch.nn.CrossEntropyLoss().cuda()
-			self.criterion_domain = torch.nn.CrossEntropyLoss().cuda()
-		else:
-			raise ValueError("Unknown loss type")
 		
 		return optimizer
 
@@ -881,7 +882,7 @@ class VideoModel(pl.LightningModule):
 		((source_data, source_label, source_id), (target_data, target_label, target_id)) = train_batch
 		i = batch_idx
 
-		p = float(i + self.epoch_number * self.batch_size[0]) / (self.batch_size[0] * self.epochs)
+		p = float(i + self.current_epoch * self.batch_size[0]) / (self.batch_size[0] * self.epochs)
 		beta_dann = 2. / (1. + np.exp(-1.0 * p)) - 1
 		self.beta = [beta_dann if self.beta[i] < 0 else self.beta[i] for i in range(len(self.beta))] # replace the default beta if value < 0
 		if self.dann_warmup:
@@ -924,7 +925,7 @@ class VideoModel(pl.LightningModule):
 		#====== pre-train source data ======#
 		if self.pretrain_source:
 			#------ forward pass data again ------#
-			_, out_source, out_source_2, _, _, _, _, _, _, _ = self.model(source_data, target_data, beta_new, mu, is_train=True, reverse=False)
+			_, out_source, out_source_2, _, _, _, _, _, _, _ = self(source_data, target_data, beta_new, mu, is_train=True, reverse=False)
 
 			# ignore dummy tensors
 			out_source_verb = out_source[0][:batch_source_ori]
@@ -966,7 +967,7 @@ class VideoModel(pl.LightningModule):
 
 		### forward pass ###
 
-		attn_source, out_source, out_source_2, pred_domain_source, feat_source, attn_target, out_target, out_target_2, pred_domain_target, feat_target = self.model(source_data, target_data, beta_new, self.mu, is_train=True, reverse=False)
+		attn_source, out_source, out_source_2, pred_domain_source, feat_source, attn_target, out_target, out_target_2, pred_domain_target, feat_target = self(source_data, target_data, beta_new, self.mu, is_train=True, reverse=False)
 
 		attn_source, out_source, out_source_2, pred_domain_source, feat_source = removeDummy(attn_source, out_source, out_source_2, pred_domain_source, feat_source, batch_source_ori)
 		attn_target, out_target, out_target_2, pred_domain_target, feat_target = removeDummy(attn_target, out_target, out_target_2, pred_domain_target, feat_target, batch_target_ori)
@@ -1159,7 +1160,7 @@ class VideoModel(pl.LightningModule):
 		loss.backward()
 
 		if self.clip_gradient is not None:
-			total_norm = clip_grad_norm_(self.model.parameters(), self.clip_gradient)
+			total_norm = clip_grad_norm_(self.parameters(), self.clip_gradient)
 			if total_norm > self.clip_gradient and self.verbose:
 				print("clipping gradient: {} with coef {}".format(total_norm, self.clip_gradient / total_norm))
 
@@ -1194,7 +1195,7 @@ class VideoModel(pl.LightningModule):
 				line += 'mu {mu:.6f}  loss_s {loss_s.avg:.4f}\t'
 
 			line = line.format(
-				self.epoch_number, i, self.batch_size[0] * self.epochs, batch_time=self.batch_time, data_time=self.data_time, alpha=self.alpha, beta=beta_new, gamma=self.gamma, mu=self.mu,
+				self.current_epoch, i, self.batch_size[0] * self.epochs, batch_time=self.batch_time, data_time=self.data_time, alpha=self.alpha, beta=beta_new, gamma=self.gamma, mu=self.mu,
 				loss=self.losses, loss_verb=self.losses_c_verb, loss_noun=self.losses_c_noun, loss_d=self.losses_d, loss_a=self.losses_a,
 				loss_e_verb=self.losses_e_verb, loss_e_noun=self.losses_e_noun, loss_s=self.losses_s, top1_verb=self.top1_verb,
 				top1_noun=self.top1_noun, top5_verb=self.top5_verb, top5_noun=self.top5_noun, top1_action=self.top1_action, top5_action=self.top5_action,
@@ -1203,7 +1204,7 @@ class VideoModel(pl.LightningModule):
 			if i % self.show_freq == 0:
 				print(line)
 
-			self.log('%s\n' % line)
+			# self.log("line", "line", '%s\n' % line)
 
 		# adjust the learning rate for ech step (e.g. DANN)
 		# if args.lr_adaptive == 'dann':
@@ -1231,16 +1232,16 @@ class VideoModel(pl.LightningModule):
 	
 	### Will probably need to override this ###
 	def training_epoch_end(self, training_step_outputs):
-		n_iter_train = self.epoch_number * self.batch_size[0] # calculate the total iteration
+		n_iter_train = self.current_epoch * self.batch_size[0] # calculate the total iteration
 		# embedding
 
-		self.writer_train.add_scalar("loss/verb", self.losses_c_verb.avg, self.epoch_number)
-		self.writer_train.add_scalar("loss/noun", self.losses_c_noun.avg, self.epoch_number)
-		self.writer_train.add_scalar("acc/verb", self.top1_verb.avg, self.epoch_number)
-		self.writer_train.add_scalar("acc/noun", self.top1_noun.avg, self.epoch_number)
-		self.writer_train.add_scalar("acc/action", self.top1_action.avg, self.epoch_number)
+		self.writer_train.add_scalar("loss/verb", self.losses_c_verb.avg, self.current_epoch)
+		self.writer_train.add_scalar("loss/noun", self.losses_c_noun.avg, self.current_epoch)
+		self.writer_train.add_scalar("acc/verb", self.top1_verb.avg, self.current_epoch)
+		self.writer_train.add_scalar("acc/noun", self.top1_noun.avg, self.current_epoch)
+		self.writer_train.add_scalar("acc/action", self.top1_action.avg, self.current_epoch)
 		if self.adv_DA != 'none' and self.use_target != 'none':
-			self.writer_train.add_scalar("loss/domain", self.self.loss_adversarial,self.epoch_number)
+			self.writer_train.add_scalar("loss/domain", self.self.loss_adversarial,self.current_epoch)
 		# indicies_source = np.random.randint(0,len(feat_source_display),150)
 		# indicies_target = np.random.randint(0, len(feat_target_display), 150)
 		# label_source_verb_display = label_source_verb_display[indicies_source]
@@ -1267,9 +1268,9 @@ class VideoModel(pl.LightningModule):
 		self.top5_action.reset()
 
 		if self.no_partialbn:
-			self.model.module.partialBN(False)
+			self.module.partialBN(False)
 		else:
-			self.model.module.partialBN(True)
+			self.module.partialBN(True)
 
 	def accuracy(self, output, target, topk=(1,)):
 		"""Computes the precision@k for the specified values of k"""
@@ -1302,8 +1303,7 @@ class VideoModel(pl.LightningModule):
 		task_count = len(outputs)
 		batch_size = labels[0].size(0)
 		all_correct = torch.zeros(max_k, batch_size).type(torch.ByteTensor)
-		if torch.cuda.is_available():
-			all_correct = all_correct.cuda()
+		
 		for output, label in zip(outputs, labels):
 			_, max_k_idx = output.topk(max_k, dim=1, largest=True, sorted=True)
 			# Flip batch_size, class_count as .view doesn't work on non-contiguous
@@ -1346,7 +1346,7 @@ class VideoModel(pl.LightningModule):
 				val_label_noun_frame = val_label_noun.unsqueeze(1).repeat(1, self.val_segments).view(-1)  # expand the size for all the frames
 
 			# compute output
-			_, _, _, _, _, attn_val, out_val, out_val_2, pred_domain_val, feat_val = self.model(val_data, val_data, [0]*len(self.beta), 0, is_train=False, reverse=False)
+			_, _, _, _, _, attn_val, out_val, out_val_2, pred_domain_val, feat_val = self(val_data, val_data, [0]*len(self.beta), 0, is_train=False, reverse=False)
 
 			# ignore dummy tensors
 			attn_val, out_val, out_val_2, pred_domain_val, feat_val = removeDummy(attn_val, out_val, out_val_2, pred_domain_val, feat_val, batch_val_ori)
@@ -1356,10 +1356,10 @@ class VideoModel(pl.LightningModule):
 			label_noun = val_label_noun_frame if self.baseline_type == 'frame' else val_label_noun
 
 			# store the embedding
-			if self.tensorboard:
-				feat_val_display = feat_val[1] if i == 0 else torch.cat((feat_val_display, feat_val[1]), 0)
-				label_val_verb_display = label_verb if i == 0 else torch.cat((label_val_verb_display, label_verb), 0)
-				label_val_noun_display = label_noun if i == 0 else torch.cat((label_val_noun_display, label_noun), 0)
+			# if self.tensorboard:
+			# 	feat_val_display = feat_val[1] if self.current_epoch == 0 else torch.cat((feat_val_display, feat_val[1]), 0)
+			# 	label_val_verb_display = label_verb if self.current_epoch else torch.cat((label_val_verb_display, label_verb), 0)
+			# 	label_val_noun_display = label_noun if self.current_epoch else torch.cat((label_val_noun_display, label_noun), 0)
 
 			pred_verb = out_val[0]
 			pred_noun = out_val[1]
@@ -1407,14 +1407,14 @@ class VideoModel(pl.LightningModule):
 					   'Prec@5 action{top5_action.val:.3f} ({top5_action.avg:.3f})\t'
 
 				line = line.format(
-					   self.epoch_number, i, self.batch_size[0] * self.epochs, batch_time=self.batch_time_val, loss=self.losses_val,
+					   self.current_epoch, i, self.batch_size[0] * self.epochs, batch_time=self.batch_time_val, loss=self.losses_val,
 					   top1_verb=self.top1_verb_val, top5_verb=self.top5_verb_val, top1_noun=self.top1_noun_val, top5_noun=self.top5_noun_val,
 						top1_action=self.top1_action_val, top5_action=self.top5_action_val)
 
 				if i % self.show_freq == 0:
 					print(line)
 
-				self.log('%s\n' % line)
+				# self.log("line", "line", '%s\n' % line)
 		return self.losses 
 			
 	### Will probably need to override this ###
@@ -1425,7 +1425,7 @@ class VideoModel(pl.LightningModule):
 
 		
 
-		self.model.eval()
+		self.eval()
 
 		self.end_val = time.time()
 		# evaluate on validation set
@@ -1457,12 +1457,12 @@ class VideoModel(pl.LightningModule):
 				best_prec1 = max(prec1, best_prec1)
 
 				if self.tensorboard:
-					self.writer_val.add_text('Best_Accuracy', str(best_prec1), self.epoch_number)
+					self.writer_val.add_text('Best_Accuracy', str(best_prec1), self.current_epoch)
 				if self.save_model:
 					save_checkpoint({
-						'epoch': self.epoch_number,
+						'epoch': self.current_epoch,
 						'arch': self.arch,
-						'state_dict': self.model.state_dict(),
+						'state_dict': self.state_dict(),
 						'optimizer' : self.optimizer.state_dict(),
 						'best_prec1': best_prec1,
 						'prec1': prec1,
@@ -1470,9 +1470,9 @@ class VideoModel(pl.LightningModule):
 
 			else:
 				save_checkpoint({
-					'epoch': self.epoch_number,
+					'epoch': self.current_epoch,
 					'arch': self.arch,
-					'state_dict': self.model.state_dict(),
+					'state_dict': self.state_dict(),
 					'optimizer': self.optimizer.state_dict(),
 					'best_prec1':  0.0,
 					'prec1': 0.0,
