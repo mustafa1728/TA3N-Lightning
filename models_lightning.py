@@ -174,8 +174,8 @@ class VideoModel(pl.LightningModule):
 		self.place_dis = ['Y', 'Y', 'N']
 		self.pred_normalize = 'N'
 		self.add_loss_DA = 'none'
-		self.print_freq = 10
-		self.show_freq = 10
+		self.print_freq = 1
+		self.show_freq = 1
 		self.ens_DA = 'none'
 
 		self.batch_time = AverageMeter()
@@ -1420,9 +1420,7 @@ class VideoModel(pl.LightningModule):
 	### Will probably need to override this ###
 	def validation_epoch_end(self, training_step_outputs):
 
-		print(('Testing Results: Prec@1 verb {top1_verb.avg:.3f}  Prec@1 noun {top1_noun.avg:.3f} Prec@1 action {top1_action.avg:.3f} Prec@5 verb {top5_verb.avg:.3f} Prec@5 noun {top5_noun.avg:.3f} Prec@5 action {top5_action.avg:.3f} Loss {loss.avg:.5f}'
-		   .format(top1_verb=self.top1_verb_val, top1_noun=self.top1_noun_val, top1_action=self.top1_action_val, top5_verb=self.top5_verb_val, top5_noun=self.top5_noun_val, top5_action=self.top5_action_val, loss=self.losses_val)))
-
+		
 		
 
 		self.eval()
