@@ -3,9 +3,9 @@
 #====== parameters ======#
 dataset="epic" # hmdb_ucf | hmdb_ucf_small | ucf_olympic
 num_class='97,300'
-training=false # true | false
-testing=true # true | false
-modality=ALL
+training=true # true | false
+testing=false # true | false
+modality=RGB
 frame_type=feature # frame | feature
 num_segments=5 # sample frame # of each video for training
 test_segments=5

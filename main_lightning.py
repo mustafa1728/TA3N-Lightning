@@ -10,7 +10,7 @@ import torch.optim
 from torch.nn.utils import clip_grad_norm_
 
 from dataset import TSNDataSet
-from models import VideoModel
+from models_lightning import VideoModel
 from loss import *
 from opts import parser
 from utils.utils import randSelectBatch
@@ -33,6 +33,7 @@ init(autoreset=True)
 
 best_prec1 = 0
 gpu_count = torch.cuda.device_count()
+print(Fore.YELLOW + "Number of GPUS available: ", gpu_count)
 
 def main():
 	global args
@@ -92,8 +93,6 @@ def main():
 				n_rnn=args.n_rnn, rnn_cell=args.rnn_cell, n_directions=args.n_directions, n_ts=args.n_ts,
 				use_attn=args.use_attn, n_attn=args.n_attn, use_attn_frame=args.use_attn_frame,
 				verbose=args.verbose, share_params=args.share_params)
-
-	model = torch.nn.DataParallel(model, args.gpus).cuda()
 
 	if args.optimizer == 'SGD':
 		print(Fore.YELLOW + 'using SGD')
@@ -202,7 +201,7 @@ def main():
 	print(Fore.CYAN + 'start training......')
 	
 
-	trainer = Trainer(gpus = gpu_count)
+	trainer = Trainer(min_epochs=20, max_epochs=30)
 	trainer.fit(model, (source_loader, target_loader))
 	
 	end_train = time.time()
@@ -234,8 +233,8 @@ def main():
 	# 	np.savetxt('attn_source_' + str(args.save_attention) + '.log', attn_source_all.cpu().detach().numpy(), fmt="%s")
 	# 	np.savetxt('attn_target_' + str(args.save_attention) + '.log', attn_target_all.cpu().detach().numpy(), fmt="%s")
 
-	print(('Training Results: Prec@1 verb {top1_verb.avg:.3f}  Prec@1 noun {top1_noun.avg:.3f} Prec@1 action {top1_action.avg:.3f} Prec@5 verb {top5_verb.avg:.3f} Prec@5 noun {top5_noun.avg:.3f} Prec@5 action {top5_action.avg:.3f} Loss {loss.avg:.5f}'
-		   .format(top1_verb=model.top1_verb_val, top1_noun=model.top1_noun_val, top1_action=model.top1_action_val, top5_verb=model.top5_verb_val, top5_noun=model.top5_noun_val, top5_action=model.top5_action_val, loss=model.losses_val)))
+	# print(('Training Results: Prec@1 verb {top1_verb.avg:.3f}  Prec@1 noun {top1_noun.avg:.3f} Prec@1 action {top1_action.avg:.3f} Prec@5 verb {top5_verb.avg:.3f} Prec@5 noun {top5_noun.avg:.3f} Prec@5 action {top5_action.avg:.3f} Loss {loss.avg:.5f}'
+	# 	   .format(top1_verb=model.top1_verb_val, top1_noun=model.top1_noun_val, top1_action=model.top1_action_val, top5_verb=model.top5_verb_val, top5_noun=model.top5_noun_val, top5_action=model.top5_action_val, loss=model.losses_val)))
 
 	print(Fore.CYAN + 'Training complete')
 if __name__ == '__main__':

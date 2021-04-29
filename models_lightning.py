@@ -115,6 +115,8 @@ class VideoModel(pl.LightningModule):
 		else:
 			self.new_length = new_length
 
+
+		self.automatic_optimization  = False
 		if verbose:
 			print(("""
 				Initializing TSN with base model: {}.
@@ -132,11 +134,12 @@ class VideoModel(pl.LightningModule):
 		self._enable_pbn = partial_bn
 		if partial_bn:
 			self.partialBN(True)
+		self.no_partialbn = not partial_bn
 
 
 		self.optimizerName = 'SGD'
 		self.loss_type = 'nll'
-		self.lr = 0.0001
+		self.lr = 0.003
 		self.momentum = 0.9
 		self.weight_decay = 1e-4
 		self.epochs = 100
@@ -172,10 +175,11 @@ class VideoModel(pl.LightningModule):
 		self.use_target = 'none'
 		self.add_fc = 1
 		self.place_dis = ['Y', 'Y', 'N']
+		self.place_adv = ['Y', 'Y']
 		self.pred_normalize = 'N'
 		self.add_loss_DA = 'none'
-		self.print_freq = 1
-		self.show_freq = 1
+		self.print_freq = 10
+		self.show_freq = 10
 		self.ens_DA = 'none'
 
 		self.batch_time = AverageMeter()
@@ -212,10 +216,11 @@ class VideoModel(pl.LightningModule):
 		self.arch = "resnet50"
 		self.save_model = False
 		self.labels_available = True
+		self.adv_DA = "RevGrad"
 
 		if self.loss_type == 'nll':
-			self.criterion = torch.nn.CrossEntropyLoss().cuda()
-			self.criterion_domain = torch.nn.CrossEntropyLoss().cuda()
+			self.criterion = torch.nn.CrossEntropyLoss()
+			self.criterion_domain = torch.nn.CrossEntropyLoss()
 		else:
 			raise ValueError("Unknown loss type")
 
@@ -878,6 +883,7 @@ class VideoModel(pl.LightningModule):
 
 	def training_step(self, train_batch, batch_idx):
 		
+		
 
 		((source_data, source_label, source_id), (target_data, target_label, target_id)) = train_batch
 		i = batch_idx
@@ -954,7 +960,7 @@ class VideoModel(pl.LightningModule):
 			#	loss += criterion(out_source_2, label)
 
 			# compute gradient and do SGD step
-			self.optimizer.zero_grad()
+			self.optimizers().zero_grad()
 			loss.backward()
 
 			if self.clip_gradient is not None:
@@ -962,7 +968,7 @@ class VideoModel(pl.LightningModule):
 				if total_norm > self.clip_gradient and self.verbose:
 					print("clipping gradient: {} with coef {}".format(total_norm, args.clip_gradient / total_norm))
 
-			self.optimizer.step()
+			self.optimizers().step()
 
 
 		### forward pass ###
@@ -1079,7 +1085,7 @@ class VideoModel(pl.LightningModule):
 					target_domain_label = torch.ones(pred_domain_target_single.size(0)).long()
 					domain_label = torch.cat((source_domain_label,target_domain_label),0)
 
-					domain_label = domain_label.cuda(non_blocking=True)
+					domain_label = domain_label
 
 					pred_domain = torch.cat((pred_domain_source_single, pred_domain_target_single),0)
 					pred_domain_all.append(pred_domain)
@@ -1155,7 +1161,7 @@ class VideoModel(pl.LightningModule):
 		self.top5_action.update(prec5_action, out_noun.size(0))
 
 		# compute gradient and do SGD step
-		self.optimizer.zero_grad()
+		self.optimizers().zero_grad()
 
 		loss.backward()
 
@@ -1164,45 +1170,20 @@ class VideoModel(pl.LightningModule):
 			if total_norm > self.clip_gradient and self.verbose:
 				print("clipping gradient: {} with coef {}".format(total_norm, self.clip_gradient / total_norm))
 
-		self.optimizer.step()
+		self.optimizers().step()
 
 		# measure elapsed time
 		self.batch_time.update(time.time() - self.end)
 		self.end = time.time()
 
 		if i % self.print_freq == 0:
-			line = 'Train: [{0}][{1}/{2}], lr: {lr:.5f}\t' + \
-				   'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t' + \
-				   'Data {data_time.val:.3f} ({data_time.avg:.3f})\t' + \
-				   'Prec@1 {top1_verb.val:.3f} ({top1_verb.avg:.3f})\t' + \
-				   'Prec@1 {top1_noun.val:.3f} ({top1_noun.avg:.3f})\t' + \
-				   'Prec@1 {top1_action.val:.3f} ({top1_action.avg:.3f})\t' + \
-				   'Prec@5 {top5_verb.val:.3f} ({top5_verb.avg:.3f})\t' + \
-				   'Prec@5 {top5_noun.val:.3f} ({top5_noun.avg:.3f})\t' + \
-				   'Prec@5 {top5_action.val:.3f} ({top5_action.avg:.3f})\t' + \
-				   'Loss {loss.val:.4f} ({loss.avg:.4f})   loss_verb {loss_verb.avg:.4f}   loss_noun {loss_noun.avg:.4f}\t'
+			
 
-			if self.dis_DA != 'none' and self.use_target != 'none':
-				line += 'alpha {alpha:.3f}  loss_d {loss_d.avg:.4f}\t'
-
-			if self.adv_DA != 'none' and self.use_target != 'none':
-				line += 'beta {beta[0]:.3f}, {beta[1]:.3f}, {beta[2]:.3f}  loss_a {loss_a.avg:.4f}\t'
-
-			if self.add_loss_DA != 'none' and self.use_target != 'none':
-				line += 'gamma {gamma:.6f}  loss_e_verb {loss_e_verb.avg:.4f} loss_e_noun {loss_e_noun.avg:.4f}\t'
-
-			if self.ens_DA != 'none' and self.use_target != 'none':
-				line += 'mu {mu:.6f}  loss_s {loss_s.avg:.4f}\t'
-
-			line = line.format(
-				self.current_epoch, i, self.batch_size[0] * self.epochs, batch_time=self.batch_time, data_time=self.data_time, alpha=self.alpha, beta=beta_new, gamma=self.gamma, mu=self.mu,
-				loss=self.losses, loss_verb=self.losses_c_verb, loss_noun=self.losses_c_noun, loss_d=self.losses_d, loss_a=self.losses_a,
-				loss_e_verb=self.losses_e_verb, loss_e_noun=self.losses_e_noun, loss_s=self.losses_s, top1_verb=self.top1_verb,
-				top1_noun=self.top1_noun, top5_verb=self.top5_verb, top5_noun=self.top5_noun, top1_action=self.top1_action, top5_action=self.top5_action,
-				lr=self.optimizer.param_groups[0]['lr'])
+			
 
 			if i % self.show_freq == 0:
-				print(line)
+				pass
+				# print(line)
 
 			# self.log("line", "line", '%s\n' % line)
 
@@ -1226,12 +1207,52 @@ class VideoModel(pl.LightningModule):
 			out_source = out_source / out_source.var().log()
 			out_target = out_target / out_target.var().log()
 
-		
+		self.log("Time ", self.batch_time.sum, prog_bar=True)
+		self.log("Prec@1 Verb", self.top1_verb.val, prog_bar=True)
+		self.log("Prec@1 Action", self.top1_action.val, prog_bar=True)
+		self.log("Prec@1 Noun", self.top1_noun.val, prog_bar=True)
+		self.log("Prec@5 Verb", self.top5_verb.val, prog_bar=True)
+		self.log("Prec@5 Action", self.top5_action.val, prog_bar=True)
+		self.log("Prec@5 Noun", self.top5_noun.val, prog_bar=True)
+		self.log("Loss total", self.losses.val, prog_bar=True)
 
-		return self.losses
+		return [self.losses.val]
 	
 	### Will probably need to override this ###
 	def training_epoch_end(self, training_step_outputs):
+
+		line = 'Train: [{0}], lr: {lr:.5f}\t' + \
+				   'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t' + \
+				   'Data {data_time.val:.3f} ({data_time.avg:.3f})\t' + \
+				   'Prec@1 {top1_verb.val:.3f} ({top1_verb.avg:.3f})\t' + \
+				   'Prec@1 {top1_noun.val:.3f} ({top1_noun.avg:.3f})\t' + \
+				   'Prec@1 {top1_action.val:.3f} ({top1_action.avg:.3f})\t' + \
+				   'Prec@5 {top5_verb.val:.3f} ({top5_verb.avg:.3f})\t' + \
+				   'Prec@5 {top5_noun.val:.3f} ({top5_noun.avg:.3f})\t' + \
+				   'Prec@5 {top5_action.val:.3f} ({top5_action.avg:.3f})\t' + \
+				   'Loss {loss.val:.4f} ({loss.avg:.4f})   loss_verb {loss_verb.avg:.4f}   loss_noun {loss_noun.avg:.4f}\t'
+		if self.dis_DA != 'none' and self.use_target != 'none':
+			line += 'alpha {alpha:.3f}  loss_d {loss_d.avg:.4f}\t'
+
+		if self.adv_DA != 'none' and self.use_target != 'none':
+			line += 'beta {beta[0]:.3f}, {beta[1]:.3f}, {beta[2]:.3f}  loss_a {loss_a.avg:.4f}\t'
+
+		if self.add_loss_DA != 'none' and self.use_target != 'none':
+			line += 'gamma {gamma:.6f}  loss_e_verb {loss_e_verb.avg:.4f} loss_e_noun {loss_e_noun.avg:.4f}\t'
+
+		if self.ens_DA != 'none' and self.use_target != 'none':
+			line += 'mu {mu:.6f}  loss_s {loss_s.avg:.4f}\t'
+
+		line = line.format(
+			self.current_epoch, batch_time=self.batch_time, data_time=self.data_time, alpha=self.alpha, beta=self.beta, gamma=self.gamma, mu=self.mu,
+			loss=self.losses, loss_verb=self.losses_c_verb, loss_noun=self.losses_c_noun, loss_d=self.losses_d, loss_a=self.losses_a,
+			loss_e_verb=self.losses_e_verb, loss_e_noun=self.losses_e_noun, loss_s=self.losses_s, top1_verb=self.top1_verb,
+			top1_noun=self.top1_noun, top5_verb=self.top5_verb, top5_noun=self.top5_noun, top1_action=self.top1_action, top5_action=self.top5_action,
+			lr=self.lr)
+		# print(line)
+		print(" ")
+
+
 		n_iter_train = self.current_epoch * self.batch_size[0] # calculate the total iteration
 		# embedding
 
@@ -1241,7 +1262,7 @@ class VideoModel(pl.LightningModule):
 		self.writer_train.add_scalar("acc/noun", self.top1_noun.avg, self.current_epoch)
 		self.writer_train.add_scalar("acc/action", self.top1_action.avg, self.current_epoch)
 		if self.adv_DA != 'none' and self.use_target != 'none':
-			self.writer_train.add_scalar("loss/domain", self.self.loss_adversarial,self.current_epoch)
+			self.writer_train.add_scalar("loss/domain", self.loss_adversarial,self.current_epoch)
 		# indicies_source = np.random.randint(0,len(feat_source_display),150)
 		# indicies_target = np.random.randint(0, len(feat_target_display), 150)
 		# label_source_verb_display = label_source_verb_display[indicies_source]
@@ -1267,10 +1288,10 @@ class VideoModel(pl.LightningModule):
 		self.top1_action.reset()
 		self.top5_action.reset()
 
-		if self.no_partialbn:
-			self.module.partialBN(False)
-		else:
-			self.module.partialBN(True)
+		# if self.no_partialbn:
+		# 	self.module.partialBN(False)
+		# else:
+		# 	self.module.partialBN(True)
 
 	def accuracy(self, output, target, topk=(1,)):
 		"""Computes the precision@k for the specified values of k"""
@@ -1395,26 +1416,35 @@ class VideoModel(pl.LightningModule):
 			self.batch_time_val.update(time.time() - self.end_val)
 			self.end_val = time.time()
 
-			if i % self.print_freq == 0:
-				line = 'Test: [{0}][{1}/{2}]\t' + \
-					  'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t' + \
-					  'Loss {loss.val:.4f} ({loss.avg:.4f})\t' + \
-					  'Prec@1 verb {top1_verb.val:.3f} ({top1_verb.avg:.3f})\t' + \
-					  'Prec@1 noun {top1_noun.val:.3f} ({top1_noun.avg:.3f})\t' + \
-					   'Prec@1 action {top1_action.val:.3f} ({top1_action.avg:.3f})\t' + \
-					   'Prec@5 verb {top5_verb.val:.3f} ({top5_verb.avg:.3f})\t' + \
-					   'Prec@5 noun{top5_noun.val:.3f} ({top5_noun.avg:.3f})\t' + \
-					   'Prec@5 action{top5_action.val:.3f} ({top5_action.avg:.3f})\t'
+			# if i % self.print_freq == 0:
+			# 	line = 'Test: [{0}][{1}/{2}]\t' + \
+			# 		  'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t' + \
+			# 		  'Loss {loss.val:.4f} ({loss.avg:.4f})\t' + \
+			# 		  'Prec@1 verb {top1_verb.val:.3f} ({top1_verb.avg:.3f})\t' + \
+			# 		  'Prec@1 noun {top1_noun.val:.3f} ({top1_noun.avg:.3f})\t' + \
+			# 		   'Prec@1 action {top1_action.val:.3f} ({top1_action.avg:.3f})\t' + \
+			# 		   'Prec@5 verb {top5_verb.val:.3f} ({top5_verb.avg:.3f})\t' + \
+			# 		   'Prec@5 noun{top5_noun.val:.3f} ({top5_noun.avg:.3f})\t' + \
+			# 		   'Prec@5 action{top5_action.val:.3f} ({top5_action.avg:.3f})\t'
 
-				line = line.format(
-					   self.current_epoch, i, self.batch_size[0] * self.epochs, batch_time=self.batch_time_val, loss=self.losses_val,
-					   top1_verb=self.top1_verb_val, top5_verb=self.top5_verb_val, top1_noun=self.top1_noun_val, top5_noun=self.top5_noun_val,
-						top1_action=self.top1_action_val, top5_action=self.top5_action_val)
+			# 	line = line.format(
+			# 		   self.current_epoch, i, self.batch_size[0] * self.epochs, batch_time=self.batch_time_val, loss=self.losses_val,
+			# 		   top1_verb=self.top1_verb_val, top5_verb=self.top5_verb_val, top1_noun=self.top1_noun_val, top5_noun=self.top5_noun_val,
+			# 			top1_action=self.top1_action_val, top5_action=self.top5_action_val)
 
-				if i % self.show_freq == 0:
-					print(line)
+			# 	if i % self.show_freq == 0:
+			# 		print(line)
 
 				# self.log("line", "line", '%s\n' % line)
+		self.log("Time ", self.batch_time_val.sum, prog_bar=True)
+		self.log("Prec@1 Verb", self.top1_verb_val.val, prog_bar=True)
+		self.log("Prec@1 Action", self.top1_action_val.val, prog_bar=True)
+		self.log("Prec@1 Noun", self.top1_noun_val.val, prog_bar=True)
+		self.log("Prec@5 Verb", self.top5_verb_val.val, prog_bar=True)
+		self.log("Prec@5 Action", self.top5_action_val.val, prog_bar=True)
+		self.log("Prec@5 Noun", self.top5_noun_val.val, prog_bar=True)
+		self.log("Loss total", self.losses_val.val, prog_bar=True)
+
 		return self.losses 
 			
 	### Will probably need to override this ###
@@ -1461,7 +1491,6 @@ class VideoModel(pl.LightningModule):
 						'epoch': self.current_epoch,
 						'arch': self.arch,
 						'state_dict': self.state_dict(),
-						'optimizer' : self.optimizer.state_dict(),
 						'best_prec1': best_prec1,
 						'prec1': prec1,
 					}, is_best, self.path_exp)
@@ -1471,7 +1500,6 @@ class VideoModel(pl.LightningModule):
 					'epoch': self.current_epoch,
 					'arch': self.arch,
 					'state_dict': self.state_dict(),
-					'optimizer': self.optimizer.state_dict(),
 					'best_prec1':  0.0,
 					'prec1': 0.0,
 				}, False, self.path_exp)
