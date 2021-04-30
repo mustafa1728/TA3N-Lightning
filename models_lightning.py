@@ -146,7 +146,7 @@ class VideoModel(pl.LightningModule):
 		self.batch_size = [8, 8]
 		self.eval_freq = 1
 
-		self.lr_adaptive = 0.001
+		self.lr_adaptive = 'none'
 		self.lr_decay = 10
 		self.lr_steps = [60, 100]
 		self.loss_c_current = 0
@@ -190,6 +190,7 @@ class VideoModel(pl.LightningModule):
 		self.losses_e_noun = AverageMeter()
 		self.losses_s = AverageMeter()  # ensemble loss
 		self.losses_c = AverageMeter()
+		self.loss_c_previous = 999
 		self.losses_c_verb = AverageMeter()  # classification loss
 		self.losses_c_noun = AverageMeter()  # classification loss
 		self.losses = AverageMeter()
@@ -456,7 +457,7 @@ class VideoModel(pl.LightningModule):
 				nn.Linear(feat_aggregated_dim, feat_aggregated_dim),
 				nn.Tanh(),
 				nn.Linear(feat_aggregated_dim, 1)
-				)
+			)
 
 
 	def train(self, mode=True):
@@ -863,6 +864,11 @@ class VideoModel(pl.LightningModule):
 
 	
 	def configure_optimizers(self):
+		"""
+		Automatically called by lightning to get the optimizer for training
+		Returns:
+			optimizer: a pytorch optimizer 
+		"""
 
 		if self.optimizerName == 'SGD':
 			print(Fore.YELLOW + 'using SGD')
@@ -887,9 +893,15 @@ class VideoModel(pl.LightningModule):
 				param_group['lr'] /= decay
 
 	def training_step(self, train_batch, batch_idx):
+		"""
+		Automatically called by lightning while training a single batch
+		Args:
+			train_batch: an item of the dataloader(s) passed with the trainer
+			batch_idx: the batch index (which batch is currently being trained)
+		Returns:
+			The loss(es) caluclated after performing an optimiser step
+		"""
 		
-		
-
 		((source_data, source_label, source_id), (target_data, target_label, target_id)) = train_batch
 		i = batch_idx
 
@@ -900,6 +912,10 @@ class VideoModel(pl.LightningModule):
 		    beta_new = [beta_dann*self.beta[i] for i in range(len(self.beta))]
 		else:
 			beta_new = self.beta
+		
+		if self.lr_adaptive == 'dann':
+			self.adjust_learning_rate_dann(self.optimizers(), p)
+
 		source_size_ori = source_data.size()  # original shape
 		target_size_ori = target_data.size()  # original shape
 		batch_source_ori = source_size_ori[0]
@@ -986,18 +1002,10 @@ class VideoModel(pl.LightningModule):
 		attn_target, out_target, out_target_2, pred_domain_target, feat_target = removeDummy(attn_target, out_target, out_target_2, pred_domain_target, feat_target, batch_target_ori)
 
 
-
-
-
 		out_verb = out_source[0]
 		out_noun = out_source[1]
 		label_verb = label_source_verb
 		label_noun = label_source_noun
-
-		#Sv not used
-		#if args.use_target == 'Sv':
-		#	out = torch.cat((out, out_target))
-		#	label = torch.cat((label, label_target))
 
 		loss_verb = self.criterion(out_verb, label_verb)
 		loss_noun = self.criterion(out_noun, label_noun)
@@ -1009,10 +1017,6 @@ class VideoModel(pl.LightningModule):
 			loss_classification = loss_verb  # 0.5*(loss_verb+loss_noun)
 		else:
 			raise Exception("invalid metric to train")
-
-		#MCD  not used
-		#if args.ens_DA == 'MCD' and args.use_target != 'none':
-		#	loss_classification += criterion(out_source_2, label)
 
 
 		self.losses_c_verb.update(loss_verb.item(), out_verb.size(0)) # pytorch 0.4.X
@@ -1126,18 +1130,6 @@ class VideoModel(pl.LightningModule):
 				raise Exception("invalid metric to train")
 			#loss += gamma * 0.5*(loss_entropy_verb+loss_entropy_noun)
 
-		# # 2. discrepancy loss for MCD (CVPR 18)
-		# Not used
-		# if args.ens_DA == 'MCD' and args.use_target != 'none':
-		# 	_, _, _, _, _, attn_target, out_target, out_target_2, pred_domain_target, feat_target = model(source_data, target_data, beta, mu, is_train=True, reverse=True)
-		#
-		# 	# ignore dummy tensors
-		# 	_, out_target, out_target_2, _, _ = removeDummy(attn_target, out_target, out_target_2, pred_domain_target, feat_target, batch_target_ori)
-		#
-		# 	loss_dis = -dis_MCD(out_target, out_target_2)
-		# 	losses_s.update(loss_dis.item(), out_target.size(0))
-		# 	loss += loss_dis
-
 		# 3. attentive entropy loss
 		if self.add_loss_DA == 'attentive_entropy' and self.use_attn != 'none' and self.use_target != 'none':
 			loss_entropy_verb = attentive_entropy(torch.cat((out_verb, out_target[0]),0), pred_domain_all[1])
@@ -1185,33 +1177,7 @@ class VideoModel(pl.LightningModule):
 		self.batch_time.update(time.time() - self.end)
 		self.end = time.time()
 
-		if i % self.print_freq == 0:
-			
-
-			
-
-			if i % self.show_freq == 0:
-				pass
-				# print(line)
-
-			# self.log("line", "line", '%s\n' % line)
-
-		# adjust the learning rate for ech step (e.g. DANN)
-		# if args.lr_adaptive == 'dann':
-		# 	adjust_learning_rate_dann(optimizer, p)
-
-		# save attention values w/ the selected class
-		if self.save_attention >= 0:
-			attn_source = attn_source[source_label==self.save_attention]
-			attn_target = attn_target[target_label==self.save_attention]
-			attn_epoch_source = torch.cat((attn_epoch_source, attn_source.cpu()))
-			attn_epoch_target = torch.cat((attn_epoch_target, attn_target.cpu()))
-
-
-
-		
-
-		# Pred normalise not use
+		# Pred normalise 
 		if self.pred_normalize == 'Y': # use the uncertainly method (in contruction...)
 			out_source = out_source / out_source.var().log()
 			out_target = out_target / out_target.var().log()
@@ -1226,39 +1192,21 @@ class VideoModel(pl.LightningModule):
 
 		return [self.losses.val]
 	
-	### Will probably need to override this ###
 	def training_epoch_end(self, training_step_outputs):
+		"""
+		Automatically called by lightning at the end of each training epoch
+		Args:
+			training_step_outputs: list of values returned by the training_step after each batch
+		"""
 
-		line = 'Train: [{0}], lr: {lr:.5f}\t' + \
-				   'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t' + \
-				   'Data {data_time.val:.3f} ({data_time.avg:.3f})\t' + \
-				   'Prec@1 {top1_verb.val:.3f} ({top1_verb.avg:.3f})\t' + \
-				   'Prec@1 {top1_noun.val:.3f} ({top1_noun.avg:.3f})\t' + \
-				   'Prec@1 {top1_action.val:.3f} ({top1_action.avg:.3f})\t' + \
-				   'Prec@5 {top5_verb.val:.3f} ({top5_verb.avg:.3f})\t' + \
-				   'Prec@5 {top5_noun.val:.3f} ({top5_noun.avg:.3f})\t' + \
-				   'Prec@5 {top5_action.val:.3f} ({top5_action.avg:.3f})\t' + \
-				   'Loss {loss.val:.4f} ({loss.avg:.4f})   loss_verb {loss_verb.avg:.4f}   loss_noun {loss_noun.avg:.4f}\t'
-		if self.dis_DA != 'none' and self.use_target != 'none':
-			line += 'alpha {alpha:.3f}  loss_d {loss_d.avg:.4f}\t'
-
-		if self.adv_DA != 'none' and self.use_target != 'none':
-			line += 'beta {beta[0]:.3f}, {beta[1]:.3f}, {beta[2]:.3f}  loss_a {loss_a.avg:.4f}\t'
-
-		if self.add_loss_DA != 'none' and self.use_target != 'none':
-			line += 'gamma {gamma:.6f}  loss_e_verb {loss_e_verb.avg:.4f} loss_e_noun {loss_e_noun.avg:.4f}\t'
-
-		if self.ens_DA != 'none' and self.use_target != 'none':
-			line += 'mu {mu:.6f}  loss_s {loss_s.avg:.4f}\t'
-
-		line = line.format(
-			self.current_epoch, batch_time=self.batch_time, data_time=self.data_time, alpha=self.alpha, beta=self.beta, gamma=self.gamma, mu=self.mu,
-			loss=self.losses, loss_verb=self.losses_c_verb, loss_noun=self.losses_c_noun, loss_d=self.losses_d, loss_a=self.losses_a,
-			loss_e_verb=self.losses_e_verb, loss_e_noun=self.losses_e_noun, loss_s=self.losses_s, top1_verb=self.top1_verb,
-			top1_noun=self.top1_noun, top5_verb=self.top5_verb, top5_noun=self.top5_noun, top1_action=self.top1_action, top5_action=self.top5_action,
-			lr=self.lr)
-		# print(line)
 		print(" ")
+
+		if self.lr_adaptive == 'loss':
+			self.adjust_learning_rate_loss(self.optimizers(), self.lr_decay, self.losses_c.avg, self.loss_c_previous, '>')
+		elif self.lr_adaptive == 'none' and self.current_epoch in self.lr_steps:
+			self.adjust_learning_rate(self.optimizers(), self.lr_decay)
+		
+		self.loss_c_previous = self.losses_c.avg
 
 
 		n_iter_train = self.current_epoch * self.batch_size[0] # calculate the total iteration
@@ -1290,11 +1238,6 @@ class VideoModel(pl.LightningModule):
 		self.top5_noun.reset()
 		self.top1_action.reset()
 		self.top5_action.reset()
-
-		# if self.no_partialbn:
-		# 	self.module.partialBN(False)
-		# else:
-		# 	self.module.partialBN(True)
 
 	def accuracy(self, output, target, topk=(1,)):
 		"""Computes the precision@k for the specified values of k"""
@@ -1344,7 +1287,16 @@ class VideoModel(pl.LightningModule):
 			accuracies.append(accuracy_at_k)
 		return tuple(accuracies)
 		
-	def validation_step(self, batch, batch_idx, dataset_idx = 0):
+	def validation_step(self, batch, batch_idx, dataset_idx):
+		"""
+		Automatically called by lightning while validating a single batch
+		Args:
+			batch: an item of the dataloader(s) passed with the trainer
+			batch_idx: the batch index (which batch is currently being validated)
+			dataset_idx: in case of multiple dataloaders, this indicates which dataloader is being used
+		Returns:
+			The loss(es) caluclated 
+		"""
 
 		(val_data, val_label, _) = batch
 		i = batch_idx
@@ -1384,10 +1336,10 @@ class VideoModel(pl.LightningModule):
 			label_noun = val_label_noun_frame if self.baseline_type == 'frame' else val_label_noun
 
 			# store the embedding
-			# if self.tensorboard:
-			# 	feat_val_display = feat_val[1] if self.current_epoch == 0 else torch.cat((feat_val_display, feat_val[1]), 0)
-			# 	label_val_verb_display = label_verb if self.current_epoch else torch.cat((label_val_verb_display, label_verb), 0)
-			# 	label_val_noun_display = label_noun if self.current_epoch else torch.cat((label_val_noun_display, label_noun), 0)
+			if self.tensorboard:
+				self.feat_val_display = feat_val[1] if self.current_epoch == 0 else torch.cat((self.feat_val_display, feat_val[1]), 0)
+				self.label_val_verb_display = label_verb if self.current_epoch == 0 else torch.cat((self.label_val_verb_display, label_verb), 0)
+				self.label_val_noun_display = label_noun if self.current_epoch == 0 else torch.cat((self.label_val_noun_display, label_noun), 0)
 
 			pred_verb = out_val[0]
 			pred_noun = out_val[1]
@@ -1421,42 +1373,16 @@ class VideoModel(pl.LightningModule):
 
 			# measure elapsed time
 			self.batch_time_val.update(time.time() - self.end_val)
-			self.end_val = time.time()
+			self.end_val = time.time()		
 
-			# if i % self.print_freq == 0:
-			# 	line = 'Test: [{0}][{1}/{2}]\t' + \
-			# 		  'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t' + \
-			# 		  'Loss {loss.val:.4f} ({loss.avg:.4f})\t' + \
-			# 		  'Prec@1 verb {top1_verb.val:.3f} ({top1_verb.avg:.3f})\t' + \
-			# 		  'Prec@1 noun {top1_noun.val:.3f} ({top1_noun.avg:.3f})\t' + \
-			# 		   'Prec@1 action {top1_action.val:.3f} ({top1_action.avg:.3f})\t' + \
-			# 		   'Prec@5 verb {top5_verb.val:.3f} ({top5_verb.avg:.3f})\t' + \
-			# 		   'Prec@5 noun{top5_noun.val:.3f} ({top5_noun.avg:.3f})\t' + \
-			# 		   'Prec@5 action{top5_action.val:.3f} ({top5_action.avg:.3f})\t'
-
-			# 	line = line.format(
-			# 		   self.current_epoch, i, self.batch_size[0] * self.epochs, batch_time=self.batch_time_val, loss=self.losses_val,
-			# 		   top1_verb=self.top1_verb_val, top5_verb=self.top5_verb_val, top1_noun=self.top1_noun_val, top5_noun=self.top5_noun_val,
-			# 			top1_action=self.top1_action_val, top5_action=self.top5_action_val)
-
-			# 	if i % self.show_freq == 0:
-			# 		print(line)
-
-				# self.log("line", "line", '%s\n' % line)
+		return self.losses.val 		
 		
-
-		return self.losses.val 
-
-
-
-
-
-
-
-		
-			
-	### Will probably need to override this ###
-	def validation_epoch_end(self, training_step_outputs):
+	def validation_epoch_end(self, validation_step_outputs):
+		"""
+		Automatically called by lightning after validation ends for an epoch
+		Args:
+			validation_step_outputs: list of values returned by the validation_step after each batch
+		"""
 
 		self.end_val = time.time()
 		# evaluate on validation set
@@ -1499,6 +1425,15 @@ class VideoModel(pl.LightningModule):
 		self.top5_action_val.reset()
 
 	def test_step(self, batch, batch_idx):
+		"""
+		Automatically called by lightning while testing/infering on a batch
+		Args:
+			batch: an item of the dataloader(s) passed with the trainer
+			batch_idx: the batch index (which batch is currently being evaulated)
+		Returns:
+			The loss(es) caluclated 
+		"""
+
 		(val_data, val_label, _) = batch
 		i = batch_idx
 
@@ -1537,10 +1472,10 @@ class VideoModel(pl.LightningModule):
 			label_noun = val_label_noun_frame if self.baseline_type == 'frame' else val_label_noun
 
 			# store the embedding
-			# if self.tensorboard:
-			# 	feat_val_display = feat_val[1] if self.current_epoch == 0 else torch.cat((feat_val_display, feat_val[1]), 0)
-			# 	label_val_verb_display = label_verb if self.current_epoch else torch.cat((label_val_verb_display, label_verb), 0)
-			# 	label_val_noun_display = label_noun if self.current_epoch else torch.cat((label_val_noun_display, label_noun), 0)
+			if self.tensorboard:
+				feat_val_display = feat_val[1] if self.current_epoch == 0 else torch.cat((feat_val_display, feat_val[1]), 0)
+				label_val_verb_display = label_verb if self.current_epoch else torch.cat((label_val_verb_display, label_verb), 0)
+				label_val_noun_display = label_noun if self.current_epoch else torch.cat((label_val_noun_display, label_noun), 0)
 
 			pred_verb = out_val[0]
 			pred_noun = out_val[1]
@@ -1576,26 +1511,6 @@ class VideoModel(pl.LightningModule):
 			self.batch_time_val.update(time.time() - self.end_val)
 			self.end_val = time.time()
 
-			# if i % self.print_freq == 0:
-			# 	line = 'Test: [{0}][{1}/{2}]\t' + \
-			# 		  'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t' + \
-			# 		  'Loss {loss.val:.4f} ({loss.avg:.4f})\t' + \
-			# 		  'Prec@1 verb {top1_verb.val:.3f} ({top1_verb.avg:.3f})\t' + \
-			# 		  'Prec@1 noun {top1_noun.val:.3f} ({top1_noun.avg:.3f})\t' + \
-			# 		   'Prec@1 action {top1_action.val:.3f} ({top1_action.avg:.3f})\t' + \
-			# 		   'Prec@5 verb {top5_verb.val:.3f} ({top5_verb.avg:.3f})\t' + \
-			# 		   'Prec@5 noun{top5_noun.val:.3f} ({top5_noun.avg:.3f})\t' + \
-			# 		   'Prec@5 action{top5_action.val:.3f} ({top5_action.avg:.3f})\t'
-
-			# 	line = line.format(
-			# 		   self.current_epoch, i, self.batch_size[0] * self.epochs, batch_time=self.batch_time_val, loss=self.losses_val,
-			# 		   top1_verb=self.top1_verb_val, top5_verb=self.top5_verb_val, top1_noun=self.top1_noun_val, top5_noun=self.top5_noun_val,
-			# 			top1_action=self.top1_action_val, top5_action=self.top5_action_val)
-
-			# 	if i % self.show_freq == 0:
-			# 		print(line)
-
-				# self.log("line", "line", '%s\n' % line)
 		self.log("Time ", self.batch_time_val.sum, prog_bar=True)
 		self.log("Prec@1 Verb", self.top1_verb_val.val, prog_bar=True)
 		self.log("Prec@1 Noun", self.top1_noun_val.val, prog_bar=True)
@@ -1609,7 +1524,11 @@ class VideoModel(pl.LightningModule):
 
 
 class AverageMeter(object):
-	"""Computes and stores the average and current value"""
+	"""
+	Computes and stores the average and current value
+
+	Note: redundant, will be removed soon
+	"""
 	def __init__(self):
 		self.reset()
 

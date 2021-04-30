@@ -167,7 +167,7 @@ then
 	model=checkpoint # checkpoint | model_best
 	echo $model
 
-	# testing on the validation set
+	# testing on the test set
 	echo 'testing on the test set'
 	python test_models_lightning.py $num_class $modality $val_list \
 	 $exp_path$modality'/'$model'.pth.tar' $path_data_val 'test.json'\
