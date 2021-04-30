@@ -182,34 +182,6 @@ class VideoModel(pl.LightningModule):
 		self.show_freq = 10
 		self.ens_DA = 'none'
 
-		self.batch_time = AverageMeter()
-		self.data_time = AverageMeter()
-		self.losses_a = AverageMeter()  # adversarial loss
-		self.losses_d = AverageMeter()  # discrepancy loss
-		self.losses_e_verb = AverageMeter()
-		self.losses_e_noun = AverageMeter()
-		self.losses_s = AverageMeter()  # ensemble loss
-		self.losses_c = AverageMeter()
-		self.loss_c_previous = 999
-		self.losses_c_verb = AverageMeter()  # classification loss
-		self.losses_c_noun = AverageMeter()  # classification loss
-		self.losses = AverageMeter()
-		self.top1_verb = AverageMeter()
-		self.top5_verb = AverageMeter()
-		self.top1_noun = AverageMeter()
-		self.top5_noun = AverageMeter()
-		self.top1_action = AverageMeter()
-		self.top5_action = AverageMeter()
-
-		self.batch_time_val = AverageMeter()
-		self.losses_val = AverageMeter()
-		self.top1_verb_val = AverageMeter()
-		self.top5_verb_val = AverageMeter()
-		self.top1_noun_val = AverageMeter()
-		self.top5_noun_val = AverageMeter()
-		self.top1_action_val = AverageMeter()
-		self.top5_action_val = AverageMeter()
-
 		self.end = time.time()
 		self.end_val = time.time()
 
@@ -931,9 +903,6 @@ class VideoModel(pl.LightningModule):
 			target_data = torch.cat((target_data, target_data_dummy))
 
 
-		# measure data loading time
-		self.data_time.update(time.time() - self.end)
-
 		source_label_verb = source_label[0] # pytorch 0.4.X
 		source_label_noun = source_label[1]  # pytorch 0.4.X
 
@@ -1018,11 +987,7 @@ class VideoModel(pl.LightningModule):
 		else:
 			raise Exception("invalid metric to train")
 
-
-		self.losses_c_verb.update(loss_verb.item(), out_verb.size(0)) # pytorch 0.4.X
-		self.losses_c_noun.update(loss_noun.item(), out_noun.size(0))  # pytorch 0.4.X
 		loss = loss_classification
-		self.losses_c.update(loss_classification.item(), out_verb.size(0))
 
 		# 2. calculate the loss for DA
 		# (I) discrepancy-based approach: discrepancy loss
@@ -1075,7 +1040,6 @@ class VideoModel(pl.LightningModule):
 						else:
 							raise NameError('not in dis_DA!!!')
 
-			self.losses_d.update(loss_discrepancy.item(), feat_source[0].size(0))
 			loss += self.alpha * loss_discrepancy
 
 		# (II) adversarial discriminative model: adversarial loss
@@ -1110,7 +1074,6 @@ class VideoModel(pl.LightningModule):
 
 					self.loss_adversarial += loss_adversarial_single
 
-			self.losses_a.update(self.loss_adversarial.item(), pred_domain.size(0))
 			loss += self.loss_adversarial
 
 		# (III) other loss
@@ -1118,8 +1081,7 @@ class VideoModel(pl.LightningModule):
 		if self.add_loss_DA == 'target_entropy' and self.use_target != 'none':
 			loss_entropy_verb = cross_entropy_soft(out_target[0])
 			loss_entropy_noun = cross_entropy_soft(out_target[1])
-			self.losses_e_verb.update(loss_entropy_verb.item(), out_target[0].size(0))
-			self.losses_e_noun.update(loss_entropy_noun.item(), out_target[1].size(0))
+
 			if self.train_metric == "all":
 				loss += self.gamma * 0.5*(loss_entropy_verb+loss_entropy_noun)
 			elif self.train_metric == "noun":
@@ -1134,8 +1096,7 @@ class VideoModel(pl.LightningModule):
 		if self.add_loss_DA == 'attentive_entropy' and self.use_attn != 'none' and self.use_target != 'none':
 			loss_entropy_verb = attentive_entropy(torch.cat((out_verb, out_target[0]),0), pred_domain_all[1])
 			loss_entropy_noun = attentive_entropy(torch.cat((out_noun, out_target[1]), 0), pred_domain_all[1])
-			self.losses_e_verb.update(loss_entropy_verb.item(), out_target[0].size(0))
-			self.losses_e_noun.update(loss_entropy_noun.item(), out_target[1].size(0))
+
 			if self.train_metric == "all":
 				loss += self.gamma * 0.5*(loss_entropy_verb+loss_entropy_noun)
 			elif self.train_metric == "noun":
@@ -1152,15 +1113,6 @@ class VideoModel(pl.LightningModule):
 		prec1_noun, prec5_noun = self.accuracy(pred_noun.data, label_noun, topk=(1, 5))
 		prec1_action, prec5_action = self.multitask_accuracy((pred_verb.data, pred_noun.data), (label_verb, label_noun), topk=(1, 5))
 
-
-		self.losses.update(loss.item())
-		self.top1_verb.update(prec1_verb.item(), out_verb.size(0))
-		self.top5_verb.update(prec5_verb.item(), out_verb.size(0))
-		self.top1_noun.update(prec1_noun.item(), out_noun.size(0))
-		self.top5_noun.update(prec5_noun.item(), out_noun.size(0))
-		self.top1_action.update(prec1_action, out_noun.size(0))
-		self.top5_action.update(prec5_action, out_noun.size(0))
-
 		# compute gradient and do SGD step
 		self.optimizers().zero_grad()
 
@@ -1174,7 +1126,7 @@ class VideoModel(pl.LightningModule):
 		self.optimizers().step()
 
 		# measure elapsed time
-		self.batch_time.update(time.time() - self.end)
+		batch_time  = time.time() - self.end
 		self.end = time.time()
 
 		# Pred normalise 
@@ -1182,15 +1134,17 @@ class VideoModel(pl.LightningModule):
 			out_source = out_source / out_source.var().log()
 			out_target = out_target / out_target.var().log()
 
-		self.log("Prec@1 Verb", self.top1_verb.val, prog_bar=True)
-		self.log("Prec@1 Noun", self.top1_noun.val, prog_bar=True)
-		self.log("Prec@1 Action", self.top1_action.val, prog_bar=True)
-		self.log("Prec@5 Verb", self.top5_verb.val, prog_bar=True)
-		self.log("Prec@5 Noun", self.top5_noun.val, prog_bar=True)
-		self.log("Prec@5 Action", self.top5_action.val, prog_bar=True)
-		self.log("Loss total", self.losses.val, prog_bar=True)
+		result_dict = {'batch_time': batch_time, 'loss': loss.item(), 'top1_verb': prec1_verb.item(), 'top5_verb': prec5_verb.item(), 'top1_noun': prec1_noun.item(), 'top5_noun': prec5_noun.item(), 'top1_action': prec1_action, 'top5_action': prec5_action, 'loss_c': loss_classification.item(), 'loss_c_verb': loss_verb.item(), 'loss_c_noun': loss_noun.item()}
+		
+		self.log("Prec@1 Verb", result_dict["top1_verb"], prog_bar=True)
+		self.log("Prec@1 Noun", result_dict["top1_noun"], prog_bar=True)
+		self.log("Prec@1 Action", result_dict["top1_action"], prog_bar=True)
+		self.log("Prec@5 Verb", result_dict["top5_verb"], prog_bar=True)
+		self.log("Prec@5 Noun", result_dict["top5_noun"], prog_bar=True)
+		self.log("Prec@5 Action", result_dict["top5_action"], prog_bar=True)
+		self.log("Loss total", result_dict["loss"], prog_bar=True)
 
-		return [self.losses.val]
+		return result_dict
 	
 	def training_epoch_end(self, training_step_outputs):
 		"""
@@ -1201,43 +1155,48 @@ class VideoModel(pl.LightningModule):
 
 		print(" ")
 
+		losses_c = 0
+		losses_c_verb = 0
+		losses_c_noun = 0
+		top1_verb = 0
+		top1_noun = 0
+		top1_action = 0
+
+		count = 0
+		for dict in training_step_outputs:
+			count+=1
+			losses_c += dict["loss_c"]
+			losses_c_verb += dict["loss_c_verb"]
+			losses_c_noun += dict["loss_c_noun"]
+			top1_verb += dict["top1_verb"]
+			top1_noun += dict["top1_noun"]
+			top1_action += dict["top1_action"]
+		if not (count == 0):
+			losses_c /= count
+			losses_c_verb /= count
+			losses_c_noun /= count
+			top1_verb /= count
+			top1_noun /= count
+			top1_action /= count
+
 		if self.lr_adaptive == 'loss':
-			self.adjust_learning_rate_loss(self.optimizers(), self.lr_decay, self.losses_c.avg, self.loss_c_previous, '>')
+			self.adjust_learning_rate_loss(self.optimizers(), self.lr_decay, losses_c, self.loss_c_previous, '>')
 		elif self.lr_adaptive == 'none' and self.current_epoch in self.lr_steps:
 			self.adjust_learning_rate(self.optimizers(), self.lr_decay)
 		
-		self.loss_c_previous = self.losses_c.avg
+		self.loss_c_previous = losses_c
 
 
 		n_iter_train = self.current_epoch * self.batch_size[0] # calculate the total iteration
 		# embedding
 
-		self.writer_train.add_scalar("loss/verb", self.losses_c_verb.avg, self.current_epoch)
-		self.writer_train.add_scalar("loss/noun", self.losses_c_noun.avg, self.current_epoch)
-		self.writer_train.add_scalar("acc/verb", self.top1_verb.avg, self.current_epoch)
-		self.writer_train.add_scalar("acc/noun", self.top1_noun.avg, self.current_epoch)
-		self.writer_train.add_scalar("acc/action", self.top1_action.avg, self.current_epoch)
+		self.writer_train.add_scalar("loss/verb", losses_c, self.current_epoch)
+		self.writer_train.add_scalar("loss/noun", losses_c_noun, self.current_epoch)
+		self.writer_train.add_scalar("acc/verb", losses_c_verb, self.current_epoch)
+		self.writer_train.add_scalar("acc/noun", top1_noun, self.current_epoch)
+		self.writer_train.add_scalar("acc/action", top1_action, self.current_epoch)
 		if self.adv_DA != 'none' and self.use_target != 'none':
 			self.writer_train.add_scalar("loss/domain", self.loss_adversarial,self.current_epoch)
-		
-		
-		self.batch_time.reset()
-		self.data_time.reset()
-		self.losses_a.reset()  # adversarial loss
-		self.losses_d.reset()  # discrepancy loss
-		self.losses_e_verb.reset()
-		self.losses_e_noun.reset()
-		self.losses_s.reset()  # ensemble loss
-		self.losses_c.reset()
-		self.losses_c_verb.reset()  # classification loss
-		self.losses_c_noun.reset()  # classification loss
-		self.losses.reset()
-		self.top1_verb.reset()
-		self.top5_verb.reset()
-		self.top1_noun.reset()
-		self.top5_noun.reset()
-		self.top1_action.reset()
-		self.top5_action.reset()
 
 	def accuracy(self, output, target, topk=(1,)):
 		"""Computes the precision@k for the specified values of k"""
@@ -1363,19 +1322,21 @@ class VideoModel(pl.LightningModule):
 			prec1_action, prec5_action = self.multitask_accuracy((pred_verb.data, pred_noun.data), (label_verb, label_noun),
 															topk=(1, 5))
 
-			self.losses_val.update(loss.item(), out_val[0].size(0))
-			self.top1_verb_val.update(prec1_verb.item(), out_val[0].size(0))
-			self.top5_verb_val.update(prec5_verb.item(), out_val[0].size(0))
-			self.top1_noun_val.update(prec1_noun.item(), out_val[1].size(0))
-			self.top5_noun_val.update(prec5_noun.item(), out_val[1].size(0))
-			self.top1_action_val.update(prec1_action, out_val[1].size(0))
-			self.top5_action_val.update(prec5_action, out_val[1].size(0))
+		# measure elapsed time
+		batch_time = time.time() - self.end_val
+		self.end_val = time.time()
 
-			# measure elapsed time
-			self.batch_time_val.update(time.time() - self.end_val)
-			self.end_val = time.time()		
+		result_dict = {'batch_time': batch_time, 'loss': loss.item(), 'top1_verb': prec1_verb.item(), 'top5_verb': prec5_verb.item(), 'top1_noun': prec1_noun.item(), 'top5_noun': prec5_noun.item(), 'top1_action': prec1_action, 'top5_action': prec5_action}
+	
+		self.log("Prec@1 Verb", result_dict["top1_verb"], prog_bar=True)
+		self.log("Prec@1 Noun", result_dict["top1_noun"], prog_bar=True)
+		self.log("Prec@1 Action", result_dict["top1_action"], prog_bar=True)
+		self.log("Prec@5 Verb", result_dict["top5_verb"], prog_bar=True)
+		self.log("Prec@5 Noun", result_dict["top5_noun"], prog_bar=True)
+		self.log("Prec@5 Action", result_dict["top5_action"], prog_bar=True)
+		self.log("Loss total", result_dict["loss"], prog_bar=True)
 
-		return self.losses.val 		
+		return result_dict	
 		
 	def validation_epoch_end(self, validation_step_outputs):
 		"""
@@ -1387,42 +1348,48 @@ class VideoModel(pl.LightningModule):
 		self.end_val = time.time()
 		# evaluate on validation set
 
-		if self.current_epoch % self.eval_freq == 0 or self.current_epoch == self.epochs:
-			if self.labels_available:
+		if self.labels_available:
 
-				prec1_val, prec1_verb_val, prec1_noun_val = self.top1_action_val.avg, self.top1_verb_val.avg, self.top1_noun_val.avg
+			prec1_val = 0
+			prec1_verb_val = 0
+			prec1_noun_val = 0
 
-				# remember best prec@1 and save checkpoint
-				if self.train_metric == "all":
-					prec1 = prec1_val
-				elif self.train_metric == "noun":
-					prec1 = prec1_noun_val
-				elif self.train_metric == "verb":
-					prec1 = prec1_verb_val
-				else:
-					raise Exception("invalid metric to train")
-				is_best = prec1 > self.best_prec1
-				if is_best:
-					self.best_prec1 = prec1_val
+			count = 0
+			for l in validation_step_outputs:
+				for dict in l:
+					count+=1
+					prec1_val += dict["top1_action"]
+					prec1_verb_val += dict["top1_verb"]
+					prec1_noun_val += dict["top1_noun"]
 
-					line_update = ' ==> updating the best accuracy' if is_best else ''
-					line_best = "Best score {} vs current score {}".format(self.best_prec1, prec1) + line_update
-					print(Fore.YELLOW + line_best)
-					# val_short_file.write('%.3f\n' % prec1)
+			if not (count == 0):
+				prec1_val /= count
+				prec1_verb_val /= count
+				prec1_noun_val /= count
 
-					self.best_prec1 = max(prec1, self.best_prec1)
+			# remember best prec@1 and save checkpoint
+			if self.train_metric == "all":
+				prec1 = prec1_val
+			elif self.train_metric == "noun":
+				prec1 = prec1_noun_val
+			elif self.train_metric == "verb":
+				prec1 = prec1_verb_val
+			else:
+				raise Exception("invalid metric to train")
+				
+			is_best = prec1 > self.best_prec1
+			if is_best:
+				
 
-					if self.tensorboard:
-						self.writer_val.add_text('Best_Accuracy', str(self.best_prec1), self.current_epoch)
+				line_update = ' ==> updating the best accuracy' if is_best else ''
+				line_best = "Best score {} vs current score {}".format(self.best_prec1, prec1) + line_update
+				print(Fore.YELLOW + line_best)
+				# val_short_file.write('%.3f\n' % prec1)
 
-		self.batch_time_val.reset()
-		self.losses_val.reset()
-		self.top1_verb_val.reset()
-		self.top5_verb_val.reset()
-		self.top1_noun_val.reset()
-		self.top5_noun_val.reset()
-		self.top1_action_val.reset()
-		self.top5_action_val.reset()
+			self.best_prec1 = max(prec1, self.best_prec1)
+
+			if self.tensorboard:
+				self.writer_val.add_text('Best_Accuracy', str(self.best_prec1), self.current_epoch)
 
 	def test_step(self, batch, batch_idx):
 		"""
@@ -1473,9 +1440,9 @@ class VideoModel(pl.LightningModule):
 
 			# store the embedding
 			if self.tensorboard:
-				feat_val_display = feat_val[1] if self.current_epoch == 0 else torch.cat((feat_val_display, feat_val[1]), 0)
-				label_val_verb_display = label_verb if self.current_epoch else torch.cat((label_val_verb_display, label_verb), 0)
-				label_val_noun_display = label_noun if self.current_epoch else torch.cat((label_val_noun_display, label_noun), 0)
+				self.feat_val_display = feat_val[1] if self.current_epoch == 0 else torch.cat((self.feat_val_display, feat_val[1]), 0)
+				self.label_val_verb_display = label_verb if self.current_epoch == 0 else torch.cat((self.label_val_verb_display, label_verb), 0)
+				self.label_val_noun_display = label_noun if self.current_epoch == 0 else torch.cat((self.label_val_noun_display, label_noun), 0)
 
 			pred_verb = out_val[0]
 			pred_noun = out_val[1]
@@ -1499,52 +1466,21 @@ class VideoModel(pl.LightningModule):
 			prec1_action, prec5_action = self.multitask_accuracy((pred_verb.data, pred_noun.data), (label_verb, label_noun),
 															topk=(1, 5))
 
-			self.losses_val.update(loss.item(), out_val[0].size(0))
-			self.top1_verb_val.update(prec1_verb.item(), out_val[0].size(0))
-			self.top5_verb_val.update(prec5_verb.item(), out_val[0].size(0))
-			self.top1_noun_val.update(prec1_noun.item(), out_val[1].size(0))
-			self.top5_noun_val.update(prec5_noun.item(), out_val[1].size(0))
-			self.top1_action_val.update(prec1_action, out_val[1].size(0))
-			self.top5_action_val.update(prec5_action, out_val[1].size(0))
+		# measure elapsed time
+		batch_time = time.time() - self.end_val
+		self.end_val = time.time()
 
-			# measure elapsed time
-			self.batch_time_val.update(time.time() - self.end_val)
-			self.end_val = time.time()
+		result_dict = {'batch_time': batch_time, 'loss': loss.item(), 'top1_verb': prec1_verb.item(), 'top5_verb': prec5_verb.item(), 'top1_noun': prec1_noun.item(), 'top5_noun': prec5_noun.item(), 'top1_action': prec1_action, 'top5_action': prec5_action}
+	
+		self.log("Prec@1 Verb", result_dict["top1_verb"], prog_bar=True)
+		self.log("Prec@1 Noun", result_dict["top1_noun"], prog_bar=True)
+		self.log("Prec@1 Action", result_dict["top1_action"], prog_bar=True)
+		self.log("Prec@5 Verb", result_dict["top5_verb"], prog_bar=True)
+		self.log("Prec@5 Noun", result_dict["top5_noun"], prog_bar=True)
+		self.log("Prec@5 Action", result_dict["top5_action"], prog_bar=True)
+		self.log("Loss total", result_dict["loss"], prog_bar=True)
 
-		self.log("Time ", self.batch_time_val.sum, prog_bar=True)
-		self.log("Prec@1 Verb", self.top1_verb_val.val, prog_bar=True)
-		self.log("Prec@1 Noun", self.top1_noun_val.val, prog_bar=True)
-		self.log("Prec@1 Action", self.top1_action_val.val, prog_bar=True)
-		self.log("Prec@5 Verb", self.top5_verb_val.val, prog_bar=True)
-		self.log("Prec@5 Noun", self.top5_noun_val.val, prog_bar=True)
-		self.log("Prec@5 Action", self.top5_action_val.val, prog_bar=True)
-		self.log("Loss total", self.losses_val.val, prog_bar=True)
-
-		return self.losses.val 
-
-
-class AverageMeter(object):
-	"""
-	Computes and stores the average and current value
-
-	Note: redundant, will be removed soon
-	"""
-	def __init__(self):
-		self.reset()
-
-	def reset(self):
-		self.val = 0
-		self.avg = 0
-		self.sum = 0
-		self.count = 0
-
-	def update(self, val, n=1):
-		self.val = val
-		self.sum += val * n
-		self.count += n
-		self.avg = self.sum / self.count
-
-
+		return result_dict["loss"]
 
 def removeDummy(attn, out_1, out_2, pred_domain, feat, batch_size):
 	attn = attn[:batch_size]
