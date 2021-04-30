@@ -442,8 +442,10 @@ class VideoModel(pl.LightningModule):
 			self.bn_source_video_2_T = nn.BatchNorm1d(feat_video_dim)
 
 		self.alpha = torch.ones(1)
+		
 		if self.use_bn == 'AutoDIAL':
 			self.alpha = nn.Parameter(self.alpha)
+		self.alpha = self.alpha.type_as(self.fc_feature_video_source.weight)
 
 		# ------ attention mechanism ------#
 		# conventional attention

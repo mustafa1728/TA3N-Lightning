@@ -197,10 +197,7 @@ def main():
 
 	
 
-	#=== Actual Training ===#
-	start_train = time.time()
-	print(Fore.CYAN + 'start training......')
-	
+
 	if args.train_metric == "all":
 		monitor = "Prec@1 Action"
 	elif args.train_metric == "noun":
@@ -217,7 +214,14 @@ def main():
 		mode = 'max'
 	)
 	checkpoint_callback.FILE_EXTENSION = ".pth.tar"
-	trainer = Trainer(min_epochs=20, max_epochs=30, callbacks=[checkpoint_callback])
+
+	#=== Actual Training ===#
+	
+	trainer = Trainer(min_epochs=20, max_epochs=30, callbacks=[checkpoint_callback], gpus = gpu_count, accelerator='ddp')
+
+	print(Fore.CYAN + 'start training......')	
+	start_train = time.time()
+
 	trainer.fit(model, (source_loader, target_loader))
 	
 	end_train = time.time()
