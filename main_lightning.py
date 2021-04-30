@@ -174,6 +174,8 @@ def main():
 	num_max_iter = max(num_iter_source, num_iter_target)
 	num_source_train = round(num_max_iter*args.batch_size[0]) if args.copy_list[0] == 'Y' else num_source
 	num_target_train = round(num_max_iter*args.batch_size[1]) if args.copy_list[1] == 'Y' else num_target
+	num_source_val = round(num_max_iter*args.batch_size[0]) if args.copy_list[0] == 'Y' else num_source
+	num_target_val = round(num_max_iter*args.batch_size[1]) if args.copy_list[1] == 'Y' else num_target
 
 	source_set = TSNDataSet(args.train_source_data+".pkl", args.train_source_list, num_dataload=num_source_train, num_segments=args.num_segments,
 							new_length=data_length, modality=args.modality,
@@ -195,7 +197,29 @@ def main():
 	target_sampler = torch.utils.data.sampler.RandomSampler(target_set)
 	target_loader = torch.utils.data.DataLoader(target_set, batch_size=args.batch_size[1], shuffle=False, sampler=target_sampler, num_workers=args.workers, pin_memory=True)
 
-	
+	to_validate  = args.val_source_data != "none" and args.val_target_data != "none" 
+	if(to_validate):
+		print(Fore.CYAN + 'Loading validation data......')
+		source_set_val = TSNDataSet(args.val_source_data+".pkl", args.val_source_list, num_dataload=num_source_val, num_segments=args.val_segments,
+								new_length=data_length, modality=args.modality,
+								image_tmpl="img_{:05d}.t7" if args.modality in ["RGB", "RGBDiff", "RGBDiff2", "RGBDiffplus"] else args.flow_prefix+"{}_{:05d}.t7",
+								random_shift=False,
+								test_mode=True,
+								)
+
+		source_sampler_val = torch.utils.data.sampler.RandomSampler(source_set_val)
+		source_loader_val = torch.utils.data.DataLoader(source_set_val, batch_size=args.batch_size[0], shuffle=False, sampler=source_sampler_val, num_workers=args.workers, pin_memory=True)
+
+		target_set_val = TSNDataSet(args.val_target_data+".pkl", args.val_target_list, num_dataload=num_target_val, num_segments=args.val_segments,
+								new_length=data_length, modality=args.modality,
+								image_tmpl="img_{:05d}.t7" if args.modality in ["RGB", "RGBDiff", "RGBDiff2", "RGBDiffplus"] else args.flow_prefix + "{}_{:05d}.t7",
+								random_shift=False,
+								test_mode=True,
+								)
+
+		target_sampler_val = torch.utils.data.sampler.RandomSampler(target_set_val)
+		target_loader_val = torch.utils.data.DataLoader(target_set_val, batch_size=args.batch_size[1], shuffle=False, sampler=target_sampler_val, num_workers=args.workers, pin_memory=True)
+
 
 
 	if args.train_metric == "all":
@@ -221,8 +245,11 @@ def main():
 
 	print(Fore.CYAN + 'start training......')	
 	start_train = time.time()
+	if(to_validate):
+		trainer.fit(model, (source_loader, target_loader), (source_loader_val, target_loader_val))
+	else:
+		trainer.fit(model, (source_loader, target_loader))
 
-	trainer.fit(model, (source_loader, target_loader))
 	
 	end_train = time.time()
 	print(Fore.CYAN + 'total training time:', end_train - start_train)

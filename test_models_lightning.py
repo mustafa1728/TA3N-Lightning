@@ -89,7 +89,7 @@ else:
 	for num in num_class_str:
 		num_class.append(int(num))
 
-criterion = torch.nn.CrossEntropyLoss().cuda()
+criterion = torch.nn.CrossEntropyLoss()
 
 #=== Load the network ===#
 print(Fore.CYAN + 'preparing the model......')

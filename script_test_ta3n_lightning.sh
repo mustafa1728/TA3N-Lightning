@@ -20,6 +20,8 @@ pred_normalize="N"
 weighted_class_loss_DA="N"
 weighted_class_loss="N"
 
+tovalidate=false
+
 if [ "$use_target" == "none" ] 
 then
 	exp_DA_name=baseline
@@ -43,9 +45,25 @@ then
 	path_data_source=$path_data_root'/'$dataset_source
 	path_data_target=$path_data_root'/'$dataset_target
 	path_data_val=$path_data_root'/'$dataset_val
+	if ($tovalidate)
+	then
+		val_source_data=$path_data_root"/source_val"
+		val_target_data=$path_data_root"/target_val"
+	else
+		val_source_data="none"
+		val_target_data="none"
+	fi
 
 	train_source_list=$path_labels_root'/EPIC_100_uda_source_train.pkl' # '/domain_adaptation_source_train_pre-release_v3.pkl'
 	train_target_list=$path_labels_root'/EPIC_100_uda_target_train_timestamps.pkl' # '/domain_adaptation_target_train_pre-release_v6.pkl'
+	if ($tovalidate)
+	then
+		val_source_list=$path_labels_root'/EPIC_100_uda_source_val.pkl' # '/domain_adaptation_source_train_pre-release_v3.pkl'
+		val_target_list=$path_labels_root'/EPIC_100_uda_target_val.pkl' # '/domain_adaptation_target_train_pre-release_v6.pkl'
+	else
+		val_source_list="none"
+		val_target_list="none"
+	fi
 	val_list=$path_labels_root'/EPIC_100_uda_target_test_timestamps.pkl' # '/domain_adaptation_target_test_pre-release_v3.pkl' # 'domain_adaptation_validation_pre-release_v3.pkl'
 
 	path_exp=$path_exp_root'Testexp'
@@ -127,6 +145,8 @@ then
 	#------ main command ------#
 	echo $modality
 	python main_lightning.py $num_class $modality $train_source_list $train_target_list $val_list $path_data_val $path_data_source $path_data_target --exp_path $exp_path \
+	--val_source_data $val_source_data --val_target_data $val_target_data \
+	--val_source_list $val_source_list --val_target_list $val_target_list \
 	--train_metric $train_metric --dann_warmup --arch $arch --pretrained $pretrained --baseline_type $baseline_type --frame_aggregation $frame_aggregation \
 	--num_segments $num_segments --val_segments $val_segments --add_fc $add_fc --fc_dim $fc_dim --dropout_i 0.5 --dropout_v 0.5 \
 	--use_target $use_target --share_params $share_params \
@@ -155,7 +175,7 @@ then
 	--save_scores $exp_path$modality'/scores_'$dataset_target'-'$model'-'$test_segments'seg' --save_confusion $exp_path$modality'/confusion_matrix_'$dataset_target'-'$model'-'$test_segments'seg' \
 	--n_rnn 1 --rnn_cell LSTM --n_directions 1 --n_ts 5 \
 	--use_attn $use_attn --n_attn $n_attn --use_attn_frame $use_attn_frame --use_bn $use_bn --share_params $share_params \
-	-j 4 --bS 512 --top 1 3 5 --add_fc 1 --fc_dim $fc_dim --baseline_type $baseline_type --frame_aggregation $frame_aggregation
+	-j 2 --bS 512 --top 1 3 5 --add_fc 1 --fc_dim $fc_dim --baseline_type $baseline_type --frame_aggregation $frame_aggregation
 fi
 
 # ----------------------------------------------------------------------------------

@@ -8,6 +8,11 @@ parser.add_argument('val_list', type=str)
 parser.add_argument('val_data', type=str)
 parser.add_argument('train_source_data', type=str)
 parser.add_argument('train_target_data', type=str)
+# ========================= Validation data ==========================
+parser.add_argument('--val_source_data', default="none", type=str)
+parser.add_argument('--val_target_data', default="none", type=str)
+parser.add_argument('--val_source_list', default="none", type=str)
+parser.add_argument('--val_target_list', default="none", type=str)
 # ========================= Model Configs ==========================
 parser.add_argument('--train_metric', default="all", type=str)
 parser.add_argument('--dann_warmup', default=False, action="store_true")
