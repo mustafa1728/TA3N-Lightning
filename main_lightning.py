@@ -23,6 +23,7 @@ import numpy as np
 
 
 from pytorch_lightning import Trainer
+from pytorch_lightning.callbacks import ModelCheckpoint
 from tensorboardX import SummaryWriter
 
 np.random.seed(1)
@@ -200,8 +201,23 @@ def main():
 	start_train = time.time()
 	print(Fore.CYAN + 'start training......')
 	
+	if args.train_metric == "all":
+		monitor = "Prec@1 Action"
+	elif args.train_metric == "noun":
+		monitor = "Prec@1 Noun"
+	elif args.train_metric == "verb":
+		monitor = "Prec@1 Verb" 
+	else:
+		raise Exception("invalid metric to train")
 
-	trainer = Trainer(min_epochs=20, max_epochs=30)
+	checkpoint_callback = ModelCheckpoint(
+		monitor = monitor,
+		dirpath=path_exp,
+		filename='checkpoint',
+		mode = 'max'
+	)
+	checkpoint_callback.FILE_EXTENSION = ".pth.tar"
+	trainer = Trainer(min_epochs=20, max_epochs=30, callbacks=[checkpoint_callback])
 	trainer.fit(model, (source_loader, target_loader))
 	
 	end_train = time.time()

@@ -539,6 +539,7 @@ class VideoModel(pl.LightningModule):
 
 			hidden_temp = torch.zeros(self.n_layers * self.n_directions, feat_fc_video.size(0),
 									  self.hidden_dim // self.n_directions)
+			hidden_temp = hidden_temp.type_as(feat_fc)
 
 			if self.rnn_cell == 'LSTM':
 				hidden_init = (hidden_temp, hidden_temp)
@@ -902,9 +903,11 @@ class VideoModel(pl.LightningModule):
 		# add dummy tensors to keep the same batch size for each epoch (for the last epoch)
 		if batch_source_ori < self.batch_size[0]:
 			source_data_dummy = torch.zeros(self.batch_size[0] - batch_source_ori, source_size_ori[1], source_size_ori[2])
+			source_data_dummy = source_data_dummy.type_as(source_data)
 			source_data = torch.cat((source_data, source_data_dummy))
 		if batch_target_ori < self.batch_size[1]:
 			target_data_dummy = torch.zeros(self.batch_size[1] - batch_target_ori, target_size_ori[1], target_size_ori[2])
+			target_data_dummy = source_data_dummy.type_as(target_data)
 			target_data = torch.cat((target_data, target_data_dummy))
 
 
@@ -1082,7 +1085,9 @@ class VideoModel(pl.LightningModule):
 
 					# prepare domain labels
 					source_domain_label = torch.zeros(pred_domain_source_single.size(0)).long()
+					source_domain_label = source_domain_label.type_as(source_data)
 					target_domain_label = torch.ones(pred_domain_target_single.size(0)).long()
+					source_domain_label = source_domain_label.type_as(source_domain_label)
 					domain_label = torch.cat((source_domain_label,target_domain_label),0)
 
 					domain_label = domain_label
@@ -1207,13 +1212,12 @@ class VideoModel(pl.LightningModule):
 			out_source = out_source / out_source.var().log()
 			out_target = out_target / out_target.var().log()
 
-		self.log("Time ", self.batch_time.sum, prog_bar=True)
 		self.log("Prec@1 Verb", self.top1_verb.val, prog_bar=True)
-		self.log("Prec@1 Action", self.top1_action.val, prog_bar=True)
 		self.log("Prec@1 Noun", self.top1_noun.val, prog_bar=True)
+		self.log("Prec@1 Action", self.top1_action.val, prog_bar=True)
 		self.log("Prec@5 Verb", self.top5_verb.val, prog_bar=True)
-		self.log("Prec@5 Action", self.top5_action.val, prog_bar=True)
 		self.log("Prec@5 Noun", self.top5_noun.val, prog_bar=True)
+		self.log("Prec@5 Action", self.top5_action.val, prog_bar=True)
 		self.log("Loss total", self.losses.val, prog_bar=True)
 
 		return [self.losses.val]
@@ -1324,6 +1328,8 @@ class VideoModel(pl.LightningModule):
 		task_count = len(outputs)
 		batch_size = labels[0].size(0)
 		all_correct = torch.zeros(max_k, batch_size).type(torch.ByteTensor)
+		all_correct = all_correct.type_as(labels[0])
+
 		
 		for output, label in zip(outputs, labels):
 			_, max_k_idx = output.topk(max_k, dim=1, largest=True, sorted=True)
@@ -1350,12 +1356,14 @@ class VideoModel(pl.LightningModule):
 		# add dummy tensors to keep the same batch size for each epoch (for the last epoch)
 		if batch_val_ori < self.batch_size[0]:
 			val_data_dummy = torch.zeros(self.batch_size[0] - batch_val_ori, val_size_ori[1], val_size_ori[2])
+			val_data_dummy = val_data_dummy.type_as(val_data)
 			val_data = torch.cat((val_data, val_data_dummy))
 
 		# add dummy tensors to make sure batch size can be divided by gpu #
 		gpu_count = 1
 		if val_data.size(0) % gpu_count != 0:
 			val_data_dummy = torch.zeros(gpu_count - val_data.size(0) % gpu_count, val_data.size(1), val_data.size(2))
+			val_data_dummy = val_data_dummy.type_as(val_data)
 			val_data = torch.cat((val_data, val_data_dummy))
 
 		val_label_verb = val_label[0]
@@ -1438,11 +1446,11 @@ class VideoModel(pl.LightningModule):
 				# self.log("line", "line", '%s\n' % line)
 		self.log("Time ", self.batch_time_val.sum, prog_bar=True)
 		self.log("Prec@1 Verb", self.top1_verb_val.val, prog_bar=True)
-		self.log("Prec@1 Action", self.top1_action_val.val, prog_bar=True)
 		self.log("Prec@1 Noun", self.top1_noun_val.val, prog_bar=True)
+		self.log("Prec@1 Action", self.top1_action_val.val, prog_bar=True)
 		self.log("Prec@5 Verb", self.top5_verb_val.val, prog_bar=True)
-		self.log("Prec@5 Action", self.top5_action_val.val, prog_bar=True)
 		self.log("Prec@5 Noun", self.top5_noun_val.val, prog_bar=True)
+		self.log("Prec@5 Action", self.top5_action_val.val, prog_bar=True)
 		self.log("Loss total", self.losses_val.val, prog_bar=True)
 
 		return self.losses 
@@ -1486,24 +1494,6 @@ class VideoModel(pl.LightningModule):
 
 				if self.tensorboard:
 					self.writer_val.add_text('Best_Accuracy', str(best_prec1), self.current_epoch)
-				if self.save_model:
-					save_checkpoint({
-						'epoch': self.current_epoch,
-						'arch': self.arch,
-						'state_dict': self.state_dict(),
-						'best_prec1': best_prec1,
-						'prec1': prec1,
-					}, is_best, self.path_exp)
-
-			else:
-				save_checkpoint({
-					'epoch': self.current_epoch,
-					'arch': self.arch,
-					'state_dict': self.state_dict(),
-					'best_prec1':  0.0,
-					'prec1': 0.0,
-				}, False, self.path_exp)
-
 
 		self.batch_time_val.reset()
 		self.losses_val.reset()
@@ -1514,7 +1504,6 @@ class VideoModel(pl.LightningModule):
 		self.top1_action_val.reset()
 		self.top5_action_val.reset()
 
-	### Not Sure about the testing ###		
 	def test_step(self, batch, batch_idx):
 		return self.validation_step(batch, batch_idx)
 
@@ -1536,14 +1525,6 @@ class AverageMeter(object):
 		self.count += n
 		self.avg = self.sum / self.count
 
-
-def save_checkpoint(state, is_best, path_exp, filename='checkpoint.pth.tar'):
-
-	path_file = path_exp + filename
-	torch.save(state, path_file)
-	if is_best:
-		path_best = path_exp + 'model_best.pth.tar'
-		shutil.copyfile(path_file, path_best)
 
 
 def removeDummy(attn, out_1, out_2, pred_domain, feat, batch_size):
