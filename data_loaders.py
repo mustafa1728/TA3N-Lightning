@@ -99,3 +99,27 @@ def get_val_data_loaders(args):
     target_loader_val = torch.utils.data.DataLoader(target_set_val, batch_size=args.batch_size[1], shuffle=False, sampler=target_sampler_val, num_workers=args.workers, pin_memory=True)
 
     return (source_loader_val, target_loader_val)
+
+def get_test_data_loaders(args):
+    data_length = 1 if args.modality == "RGB" else 1
+    num_test = len(pd.read_pickle(args.test_list).index)
+    if args.noun_target_data is not None:
+        data_set = TSNDataSet(args.test_target_data+".pkl", args.test_list, num_dataload=num_test, num_segments=args.test_segments,
+            new_length=data_length, modality=args.modality,
+            image_tmpl="img_{:05d}.t7" if args.modality in ['RGB', 'RGBDiff', 'RGBDiff2', 'RGBDiffplus'] else args.flow_prefix+"{}_{:05d}.t7",
+            test_mode=True, noun_data_path=args.noun_target_data+".pkl"
+            )
+    else:
+        data_set = TSNDataSet(args.test_target_data+".pkl", args.test_list, num_dataload=num_test, num_segments=args.test_segments,
+            new_length=data_length, modality=args.modality,
+            image_tmpl="img_{:05d}.t7" if args.modality in ['RGB', 'RGBDiff', 'RGBDiff2', 'RGBDiffplus'] else args.flow_prefix+"{}_{:05d}.t7",
+            test_mode=True
+            )
+    data_loader = torch.utils.data.DataLoader(data_set, batch_size=args.bS, shuffle=False, num_workers=args.workers, pin_memory=True)
+
+    data_gen = tqdm(data_loader)
+
+    output = []
+    attn_values = torch.Tensor()
+
+    return data_loader

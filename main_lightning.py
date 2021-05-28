@@ -41,7 +41,6 @@ gpu_count = torch.cuda.device_count()
 print(Fore.YELLOW + "Number of GPUS available: ", gpu_count)
 
 def main():
-	global args
 	args = parser.parse_args()
 
 	path_exp = args.exp_path + args.modality + '/'
@@ -117,6 +116,6 @@ def main():
 
 	print(Fore.CYAN + 'Training complete')
 
-	
+
 if __name__ == '__main__':
 	main()

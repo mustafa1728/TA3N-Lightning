@@ -104,3 +104,51 @@ def initialise_trainer(args):
     model.gamma = args.gamma
     model.mu = args.mu
     return model
+
+
+def initialise_tester(args):
+    # New approach
+    num_class_str = args.num_class.split(",")
+    # single class
+    if len(num_class_str) < 1:
+        raise Exception("Must specify a number of classes to train")
+    else:
+        num_class = []
+    for num in num_class_str:
+        num_class.append(int(num))
+
+        
+    verb_net = VideoModel(num_class, args.baseline_type, args.frame_aggregation, args.modality,
+        train_segments=args.test_segments if args.baseline_type == 'video' else 1, val_segments=args.test_segments if args.baseline_type == 'video' else 1,
+        base_model=args.arch, add_fc=args.add_fc, fc_dim=args.fc_dim, share_params=args.share_params,
+        dropout_i=args.dropout_i, dropout_v=args.dropout_v, use_bn=args.use_bn, partial_bn=False,
+        n_rnn=args.n_rnn, rnn_cell=args.rnn_cell, n_directions=args.n_directions, n_ts=args.n_ts,
+        use_attn=args.use_attn, n_attn=args.n_attn, use_attn_frame=args.use_attn_frame,
+        verbose=args.verbose, before_softmax=False)
+
+    verb_checkpoint = torch.load(args.weights)
+
+    verb_base_dict = {'.'.join(k.split('.')[1:]): v for k,v in list(verb_checkpoint['state_dict'].items())}
+    verb_net.load_state_dict(verb_base_dict)
+    # verb_net = torch.nn.DataParallel(verb_net)
+    verb_net.eval()
+
+    if args.noun_weights is not None:
+        noun_net = VideoModel(num_class, args.baseline_type, args.frame_aggregation, args.modality,
+                        train_segments=args.test_segments if args.baseline_type == 'video' else 1,
+                        val_segments=args.test_segments if args.baseline_type == 'video' else 1,
+                        base_model=args.arch, add_fc=args.add_fc, fc_dim=args.fc_dim, share_params=args.share_params,
+                        dropout_i=args.dropout_i, dropout_v=args.dropout_v, use_bn=args.use_bn, partial_bn=False,
+                        n_rnn=args.n_rnn, rnn_cell=args.rnn_cell, n_directions=args.n_directions, n_ts=args.n_ts,
+                        use_attn=args.use_attn, n_attn=args.n_attn, use_attn_frame=args.use_attn_frame,
+                        verbose=args.verbose, before_softmax=False)
+        noun_checkpoint = torch.load(args.noun_weights)
+
+        noun_base_dict = {'.'.join(k.split('.')[1:]): v for k,v in list(noun_checkpoint['state_dict'].items())}
+        noun_net.load_state_dict(noun_base_dict)
+        # noun_net = torch.nn.DataParallel(noun_net.cuda())
+        noun_net.eval()
+    else:
+        noun_net = None
+
+    return (verb_net, noun_net)
