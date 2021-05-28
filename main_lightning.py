@@ -11,8 +11,8 @@ from torch.nn.utils import clip_grad_norm_
 
 
 
-from loss import *
-from opts import parser
+from utils.loss import *
+from utils.opts import parser
 from utils.utils import randSelectBatch
 import math
 import pandas as pd
@@ -26,8 +26,8 @@ from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from tensorboardX import SummaryWriter
 
-from model_init import initialise_trainer
-from data_loaders import get_train_data_loaders, get_val_data_loaders
+from utils.model_init import initialise_trainer
+from utils.data_loaders import get_train_data_loaders, get_val_data_loaders
 from logging import open_log_files, write_log_files
 
 np.random.seed(1)

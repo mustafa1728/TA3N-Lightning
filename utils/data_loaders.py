@@ -10,7 +10,7 @@ import torch.optim
 from torch.nn.utils import clip_grad_norm_
 
 from dataset import TSNDataSet
-from loss import *
+from utils.loss import *
 import pandas as pd
 
 from colorama import init

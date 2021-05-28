@@ -12,7 +12,7 @@ import math
 
 import os
 import time
-from loss import *
+from utils.loss import *
 
 import numpy as np
 

@@ -26,9 +26,9 @@ from tqdm import tqdm
 from time import sleep
 
 
-from opts import parser
-from model_init import initialise_tester
-from data_loaders import get_test_data_loaders
+from utils.opts import parser
+from utils.model_init import initialise_tester
+from utils.data_loaders import get_test_data_loaders
 
 
 
