@@ -1,10 +1,12 @@
 import os
-from colorama import Fore, Back
 
 from models_lightning import VideoModel
 
 import torch
 import torch.backends.cudnn as cudnn
+
+import logging
+logging.basicConfig(format='%(asctime)s  |  %(message)s', datefmt='%d-%b-%y %H:%M:%S', level=logging.INFO)
 
 from tensorboardX import SummaryWriter
 
@@ -57,24 +59,25 @@ def set_hyperparameters(model, args):
     model.adv_DA = args.adv_DA
 
 def initialise_trainer(args):
+    
+    logging.info('Baseline:', args.baseline_type)
+    logging.info('Frame aggregation method:', args.frame_aggregation)
 
-    print(Fore.GREEN + 'Baseline:', args.baseline_type)
-    print(Fore.GREEN + 'Frame aggregation method:', args.frame_aggregation)
-
-    print(Fore.GREEN + 'target data usage:', args.use_target)
+    logging.info('target data usage:', args.use_target)
     if args.use_target == 'none':
-        print(Fore.GREEN + 'no Domain Adaptation')
+        logging.info('no Domain Adaptation')
     else:
         if args.dis_DA != 'none':
-            print(Fore.GREEN + 'Apply the discrepancy-based Domain Adaptation approach:', args.dis_DA)
+            logging.info('Apply the discrepancy-based Domain Adaptation approach:', args.dis_DA)
             if len(args.place_dis) != args.add_fc + 2:
-                raise ValueError(Back.RED + 'len(place_dis) should be equal to add_fc + 2')
+                logging.error('len(place_dis) should be equal to add_fc + 2')
+                raise ValueError('len(place_dis) should be equal to add_fc + 2')
 
         if args.adv_DA != 'none':
-            print(Fore.GREEN + 'Apply the adversarial-based Domain Adaptation approach:', args.adv_DA)
+            logging.info('Apply the adversarial-based Domain Adaptation approach:', args.adv_DA)
 
         if args.use_bn != 'none':
-            print(Fore.GREEN + 'Apply the adaptive normalization approach:', args.use_bn)
+            logging.info('Apply the adaptive normalization approach:', args.use_bn)
 
     # determine the categories
     #want to allow multi-label classes.
@@ -100,7 +103,7 @@ def initialise_trainer(args):
 
 
     #=== initialize the model ===#
-    print(Fore.CYAN + 'preparing the model......')
+    logging.info('preparing the model......')
     model = VideoModel(num_class, args.baseline_type, args.frame_aggregation, args.modality,
             train_segments=args.num_segments, val_segments=args.val_segments, 
             base_model=args.arch, path_pretrained=args.pretrained,
@@ -112,31 +115,30 @@ def initialise_trainer(args):
             verbose=args.verbose, share_params=args.share_params)
 
     if args.optimizer == 'SGD':
-        print(Fore.YELLOW + 'using SGD')
+        logging.info('using SGD')
         model.optimizerName = 'SGD'
     elif args.optimizer == 'Adam':
-        print(Fore.YELLOW + 'using Adam')
+        logging.info( 'using Adam')
         model.optimizerName = 'Adam'
     else:
-        print(Back.RED + 'optimizer not support or specified!!!')
+        logging.error('optimizer not support or specified!!!')
         exit()
 
     #=== check point ===#
     start_epoch = 1
-    print(Fore.CYAN + 'checking the checkpoint......')
+    logging.info('checking the checkpoint......')
     if args.resume:
         if os.path.isfile(args.resume):
             checkpoint = torch.load(args.resume)
             start_epoch = checkpoint['epoch'] + 1
             best_prec1 = checkpoint['best_prec1']
             model.load_state_dict(checkpoint['state_dict'])
-            print(("=> loaded checkpoint '{}' (epoch {})"
-            .format(args.resume, checkpoint['epoch'])))
+            logging.info("=> loaded checkpoint '{}' (epoch {})".format(args.resume, checkpoint['epoch']))
         if args.resume_hp:
-            print("=> loaded checkpoint hyper-parameters")
+            logging.info("=> loaded checkpoint hyper-parameters")
             model.optimizer.load_state_dict(checkpoint['optimizer'])
     else:
-        print(Back.RED + "=> no checkpoint found at '{}'".format(args.resume))
+        logging.error("=> no checkpoint found at '{}'".format(args.resume))
 
     cudnn.benchmark = True
 

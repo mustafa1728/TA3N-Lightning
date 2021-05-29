@@ -19,8 +19,8 @@ from utils.model_init import initialise_trainer
 from utils.data_loaders import get_train_data_loaders, get_val_data_loaders
 from utils.logging import open_log_files, write_log_files
 
-
-
+import logging
+logging.basicConfig(format='%(asctime)s  |  %(message)s', datefmt='%d-%b-%y %H:%M:%S', level=logging.INFO)
 
 np.random.seed(1)
 torch.manual_seed(1)
@@ -30,7 +30,7 @@ init(autoreset=True)
 
 best_prec1 = 0
 gpu_count = torch.cuda.device_count()
-print(Fore.YELLOW + "Number of GPUS available: ", gpu_count)
+logging.info( "Number of GPUS available: " + str(gpu_count))
 
 def main():
 	args = parser.parse_args()
@@ -39,31 +39,25 @@ def main():
 
 	#========== model init ========#
 
-	print(Fore.CYAN + 'Initialising model......')
+	logging.info(Fore.CYAN + 'Initialising model......')
 	model = initialise_trainer(args)
 
 	#========== log files init ========#
 
 	open_log_files(args)
-
-	#========== tensorboard init ========#
-
-	if args.tensorboard:
-		writer_train = SummaryWriter(path_exp + '/tensorboard_train')  # for tensorboardX
-		writer_val = SummaryWriter(path_exp + '/tensorboard_val')  # for tensorboardX
 	
 	#========== Data loading ========#
 	
-	print(Fore.CYAN + 'loading data......')
+	logging.info(Fore.CYAN + 'loading data......')
 
 	if args.use_opencv:
-		print("use opencv functions")
+		logging.info("use opencv functions")
 
 	source_loader, target_loader = get_train_data_loaders(args)
 	
 	to_validate  = args.val_source_data != "none" and args.val_target_data != "none" 
 	if(to_validate):
-		print(Fore.CYAN + 'Loading validation data......')
+		logging.info(Fore.CYAN + 'Loading validation data......')
 		source_loader_val, target_loader_val = get_val_data_loaders(args)
 
 	#========== Callbacks and checkpoints ========#
@@ -75,6 +69,7 @@ def main():
 	elif args.train_metric == "verb":
 		monitor = "Prec@1 Verb" 
 	else:
+		logging.error("invalid metric to train")
 		raise Exception("invalid metric to train")
 
 	checkpoint_callback = ModelCheckpoint(
@@ -89,24 +84,22 @@ def main():
 	
 	trainer = Trainer(min_epochs=20, max_epochs=30, callbacks=[checkpoint_callback], gpus = gpu_count, accelerator='ddp')
 
-	print(Fore.CYAN + 'start training......')	
+	logging.info(Fore.CYAN + 'start training......')	
 	start_train = time.time()
+
 	if(to_validate):
 		trainer.fit(model, (source_loader, target_loader), (source_loader_val, target_loader_val))
 	else:
 		trainer.fit(model, (source_loader, target_loader))
-
-	#========== Logging ========#
+	
 	end_train = time.time()
-	print(Fore.CYAN + 'total training time:', end_train - start_train)
+	
+	#========== Logging ========#
 
 	write_log_files('total time: {:.3f} '.format(end_train - start_train), best_prec1)
 	
-	if args.tensorboard:
-		writer_train.close()
-		writer_val.close()
-
-	print(Fore.CYAN + 'Training complete')
+	logging.info( Fore.CYAN + 'Training complete')
+	logging.info('total training time:' + str(end_train - start_train))
 
 
 if __name__ == '__main__':

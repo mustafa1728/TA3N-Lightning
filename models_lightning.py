@@ -112,7 +112,7 @@ class VideoModel(pl.LightningModule):
 			self.new_length = new_length
 
 		if verbose:
-			print(("""
+			self.log(("""
 				Initializing TSN with base model: {}.
 				TSN Configurations:
 				input_modality:     {}
@@ -149,6 +149,11 @@ class VideoModel(pl.LightningModule):
 
 		#======= For lightning to use custom optimizer ======#
 		self.automatic_optimization  = False
+
+	def __del__(self):
+		if self.tensorboard:
+			self.writer_train.close()
+			self.writer_val.close()
 
 	def _prepare_DA(self, num_class, base_model, modality): # convert the model to DA framework
 		if base_model == 'c3d': # C3D mode: in construction...
@@ -392,7 +397,7 @@ class VideoModel(pl.LightningModule):
 		super(VideoModel, self).train(mode)
 		count = 0
 		if self._enable_pbn:
-			print("Freezing BatchNorm2D except the first one.")
+			self.log("Freezing BatchNorm2D except the first one.")
 			for m in self.base_model.modules():
 				if isinstance(m, nn.BatchNorm2d):
 					count += 1
@@ -794,13 +799,13 @@ class VideoModel(pl.LightningModule):
 		"""
 
 		if self.optimizerName == 'SGD':
-			print(Fore.YELLOW + 'using SGD')
+			self.log(Fore.YELLOW + 'using SGD')
 			optimizer = torch.optim.SGD(self.parameters(), self.lr, momentum=self.momentum, weight_decay=self.weight_decay, nesterov=True)
 		elif self.optimizerName == 'Adam':
-			print(Fore.YELLOW + 'using Adam')
+			self.log(Fore.YELLOW + 'using Adam')
 			optimizer = torch.optim.Adam(self.parameters(), self.lr, weight_decay=self.weight_decay)
 		else:
-			print(Back.RED + 'optimizer not support or specified!!!')
+			self.log(Back.RED + 'optimizer not support or specified!!!')
 		
 		return optimizer
 
@@ -909,7 +914,7 @@ class VideoModel(pl.LightningModule):
 			if self.clip_gradient is not None:
 				total_norm = clip_grad_norm_(self.parameters(), self.clip_gradient)
 				if total_norm > self.clip_gradient and self.verbose:
-					print("clipping gradient: {} with coef {}".format(total_norm, args.clip_gradient / total_norm))
+					self.log("clipping gradient: {} with coef {}".format(total_norm, args.clip_gradient / total_norm))
 
 			self.optimizers().step()
 
@@ -1072,7 +1077,7 @@ class VideoModel(pl.LightningModule):
 		if self.clip_gradient is not None:
 			total_norm = clip_grad_norm_(self.parameters(), self.clip_gradient)
 			if total_norm > self.clip_gradient and self.verbose:
-				print("clipping gradient: {} with coef {}".format(total_norm, self.clip_gradient / total_norm))
+				self.log("clipping gradient: {} with coef {}".format(total_norm, self.clip_gradient / total_norm))
 
 		self.optimizers().step()
 
@@ -1107,7 +1112,7 @@ class VideoModel(pl.LightningModule):
 			training_step_outputs: list of values returned by the training_step after each batch
 		"""
 
-		print(" ")
+		self.log(" ")
 
 		losses_c = 0
 		losses_c_verb = 0
@@ -1341,7 +1346,7 @@ class VideoModel(pl.LightningModule):
 
 				line_update = ' ==> updating the best accuracy' if is_best else ''
 				line_best = "Best score {} vs current score {}".format(self.best_prec1, prec1) + line_update
-				print(Fore.YELLOW + line_best)
+				self.log(Fore.YELLOW + line_best)
 				# val_short_file.write('%.3f\n' % prec1)
 
 			self.best_prec1 = max(prec1, self.best_prec1)
