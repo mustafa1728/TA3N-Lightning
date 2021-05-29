@@ -12,12 +12,11 @@ from pytorch_lightning import Trainer
 from colorama import init
 from colorama import Fore, Back, Style
 
-from utils.opts import parser
+from utils.opts_test import parser
 from utils.model_init import initialise_tester
 from utils.data_loaders import get_test_data_loaders
 
 import logging
-logging.basicConfig(format='%(asctime)s  |  %(message)s', datefmt='%d-%b-%y %H:%M:%S', level=logging.INFO)
 
 encoder.FLOAT_REPR = lambda o: format(o, '.3f')
 init(autoreset=True)

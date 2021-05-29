@@ -20,7 +20,6 @@ from utils.data_loaders import get_train_data_loaders, get_val_data_loaders
 from utils.logging import open_log_files, write_log_files
 
 import logging
-logging.basicConfig(format='%(asctime)s  |  %(message)s', datefmt='%d-%b-%y %H:%M:%S', level=logging.INFO)
 
 np.random.seed(1)
 torch.manual_seed(1)
@@ -93,10 +92,12 @@ def main():
 		trainer.fit(model, (source_loader, target_loader))
 	
 	end_train = time.time()
-	
+
 	#========== Logging ========#
 
 	write_log_files('total time: {:.3f} '.format(end_train - start_train), best_prec1)
+	model.writer_train.close()
+	model.writer_val.close()
 	
 	logging.info( Fore.CYAN + 'Training complete')
 	logging.info('total training time:' + str(end_train - start_train))

@@ -6,7 +6,6 @@ import torch
 import torch.backends.cudnn as cudnn
 
 import logging
-logging.basicConfig(format='%(asctime)s  |  %(message)s', datefmt='%d-%b-%y %H:%M:%S', level=logging.INFO)
 
 from tensorboardX import SummaryWriter
 
@@ -58,26 +57,32 @@ def set_hyperparameters(model, args):
     model.labels_available = True
     model.adv_DA = args.adv_DA
 
+    if model.loss_type == 'nll':
+        model.criterion = torch.nn.CrossEntropyLoss()
+        model.criterion_domain = torch.nn.CrossEntropyLoss()
+    else:
+        raise ValueError("Unknown loss type")
+
 def initialise_trainer(args):
     
-    logging.info('Baseline:', args.baseline_type)
-    logging.info('Frame aggregation method:', args.frame_aggregation)
+    logging.info('Baseline:' + args.baseline_type)
+    logging.info('Frame aggregation method:' + args.frame_aggregation)
 
-    logging.info('target data usage:', args.use_target)
+    logging.info('target data usage:' + args.use_target)
     if args.use_target == 'none':
         logging.info('no Domain Adaptation')
     else:
         if args.dis_DA != 'none':
-            logging.info('Apply the discrepancy-based Domain Adaptation approach:', args.dis_DA)
+            logging.info('Apply the discrepancy-based Domain Adaptation approach:'+ args.dis_DA)
             if len(args.place_dis) != args.add_fc + 2:
                 logging.error('len(place_dis) should be equal to add_fc + 2')
                 raise ValueError('len(place_dis) should be equal to add_fc + 2')
 
         if args.adv_DA != 'none':
-            logging.info('Apply the adversarial-based Domain Adaptation approach:', args.adv_DA)
+            logging.info('Apply the adversarial-based Domain Adaptation approach:'+ args.adv_DA)
 
         if args.use_bn != 'none':
-            logging.info('Apply the adaptive normalization approach:', args.use_bn)
+            logging.info('Apply the adaptive normalization approach:'+ args.use_bn)
 
     # determine the categories
     #want to allow multi-label classes.

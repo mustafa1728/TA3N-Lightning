@@ -17,6 +17,7 @@ from colorama import Fore, Back, Style
 from tensorboardX import SummaryWriter
 from torch.nn.utils import clip_grad_norm_
 
+import logging
 from utils.loss import *
 
 torch.manual_seed(1)
@@ -112,7 +113,7 @@ class VideoModel(pl.LightningModule):
 			self.new_length = new_length
 
 		if verbose:
-			self.log(("""
+			logging.info(("""
 				Initializing TSN with base model: {}.
 				TSN Configurations:
 				input_modality:     {}
@@ -135,11 +136,7 @@ class VideoModel(pl.LightningModule):
 
 		#======= Setting up losses and the criterion ======#
 
-		if self.loss_type == 'nll':
-			self.criterion = torch.nn.CrossEntropyLoss()
-			self.criterion_domain = torch.nn.CrossEntropyLoss()
-		else:
-			raise ValueError("Unknown loss type")
+		
 		self.loss_c_current = 0
 		self.loss_c_previous = 0
 		self.save_attention = -1
@@ -150,10 +147,7 @@ class VideoModel(pl.LightningModule):
 		#======= For lightning to use custom optimizer ======#
 		self.automatic_optimization  = False
 
-	def __del__(self):
-		if self.tensorboard:
-			self.writer_train.close()
-			self.writer_val.close()
+		self.tensorboard = True
 
 	def _prepare_DA(self, num_class, base_model, modality): # convert the model to DA framework
 		if base_model == 'c3d': # C3D mode: in construction...
@@ -397,7 +391,7 @@ class VideoModel(pl.LightningModule):
 		super(VideoModel, self).train(mode)
 		count = 0
 		if self._enable_pbn:
-			self.log("Freezing BatchNorm2D except the first one.")
+			logging.info("Freezing BatchNorm2D except the first one.")
 			for m in self.base_model.modules():
 				if isinstance(m, nn.BatchNorm2d):
 					count += 1
@@ -799,13 +793,13 @@ class VideoModel(pl.LightningModule):
 		"""
 
 		if self.optimizerName == 'SGD':
-			self.log(Fore.YELLOW + 'using SGD')
+			logging.info(Fore.YELLOW + 'using SGD')
 			optimizer = torch.optim.SGD(self.parameters(), self.lr, momentum=self.momentum, weight_decay=self.weight_decay, nesterov=True)
 		elif self.optimizerName == 'Adam':
-			self.log(Fore.YELLOW + 'using Adam')
+			logging.info(Fore.YELLOW + 'using Adam')
 			optimizer = torch.optim.Adam(self.parameters(), self.lr, weight_decay=self.weight_decay)
 		else:
-			self.log(Back.RED + 'optimizer not support or specified!!!')
+			logging.info(Back.RED + 'optimizer not support or specified!!!')
 		
 		return optimizer
 
@@ -855,7 +849,7 @@ class VideoModel(pl.LightningModule):
 			source_data = torch.cat((source_data, source_data_dummy))
 		if batch_target_ori < self.batch_size[1]:
 			target_data_dummy = torch.zeros(self.batch_size[1] - batch_target_ori, target_size_ori[1], target_size_ori[2])
-			target_data_dummy = source_data_dummy.type_as(target_data)
+			target_data_dummy = target_data_dummy.type_as(target_data)
 			target_data = torch.cat((target_data, target_data_dummy))
 
 
@@ -914,7 +908,7 @@ class VideoModel(pl.LightningModule):
 			if self.clip_gradient is not None:
 				total_norm = clip_grad_norm_(self.parameters(), self.clip_gradient)
 				if total_norm > self.clip_gradient and self.verbose:
-					self.log("clipping gradient: {} with coef {}".format(total_norm, args.clip_gradient / total_norm))
+					logging.info("clipping gradient: {} with coef {}".format(total_norm, args.clip_gradient / total_norm))
 
 			self.optimizers().step()
 
@@ -1016,6 +1010,7 @@ class VideoModel(pl.LightningModule):
 					source_domain_label = source_domain_label.type_as(source_data)
 					target_domain_label = torch.ones(pred_domain_target_single.size(0)).long()
 					source_domain_label = source_domain_label.type_as(source_domain_label)
+					source_domain_label = source_domain_label.type_as(target_domain_label)
 					domain_label = torch.cat((source_domain_label,target_domain_label),0)
 
 					domain_label = domain_label
@@ -1026,7 +1021,7 @@ class VideoModel(pl.LightningModule):
 
 					if self.pred_normalize == 'Y':  # use the uncertainly method (in construction......)
 						pred_domain = pred_domain / pred_domain.var().log()
-					loss_adversarial_single = self.criterion_domain(pred_domain, domain_label)
+					loss_adversarial_single = self.criterion_domain(pred_domain, domain_label.type_as(pred_domain).long())
 
 					self.loss_adversarial += loss_adversarial_single
 
@@ -1077,7 +1072,7 @@ class VideoModel(pl.LightningModule):
 		if self.clip_gradient is not None:
 			total_norm = clip_grad_norm_(self.parameters(), self.clip_gradient)
 			if total_norm > self.clip_gradient and self.verbose:
-				self.log("clipping gradient: {} with coef {}".format(total_norm, self.clip_gradient / total_norm))
+				logging.info("clipping gradient: {} with coef {}".format(total_norm, self.clip_gradient / total_norm))
 
 		self.optimizers().step()
 
@@ -1112,7 +1107,7 @@ class VideoModel(pl.LightningModule):
 			training_step_outputs: list of values returned by the training_step after each batch
 		"""
 
-		self.log(" ")
+		print(" ")
 
 		losses_c = 0
 		losses_c_verb = 0
@@ -1346,7 +1341,7 @@ class VideoModel(pl.LightningModule):
 
 				line_update = ' ==> updating the best accuracy' if is_best else ''
 				line_best = "Best score {} vs current score {}".format(self.best_prec1, prec1) + line_update
-				self.log(Fore.YELLOW + line_best)
+				logging.info(Fore.YELLOW + line_best)
 				# val_short_file.write('%.3f\n' % prec1)
 
 			self.best_prec1 = max(prec1, self.best_prec1)
