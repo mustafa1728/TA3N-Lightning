@@ -1,27 +1,23 @@
-from torch import nn
+import time
+import numpy as np
 
+from torch import nn
 from torch.nn.init import *
 from torch.autograd import Function
 import torch.nn as nn
-import pytorch_lightning as pl
-
 import torch.nn.functional as F
 import torchvision
+
+import pytorch_lightning as pl
 import TRNmodule_lightning
-import math
-
-import os
-import time
-from utils.loss import *
-
-import numpy as np
 
 from colorama import init
 from colorama import Fore, Back, Style
 
 from tensorboardX import SummaryWriter
-import shutil
 from torch.nn.utils import clip_grad_norm_
+
+from utils.loss import *
 
 torch.manual_seed(1)
 torch.cuda.manual_seed_all(1)
@@ -115,8 +111,6 @@ class VideoModel(pl.LightningModule):
 		else:
 			self.new_length = new_length
 
-
-		self.automatic_optimization  = False
 		if verbose:
 			print(("""
 				Initializing TSN with base model: {}.
@@ -136,68 +130,25 @@ class VideoModel(pl.LightningModule):
 			self.partialBN(True)
 		self.no_partialbn = not partial_bn
 
-
-		self.optimizerName = 'SGD'
-		self.loss_type = 'nll'
-		self.lr = 0.003
-		self.momentum = 0.9
-		self.weight_decay = 1e-4
-		self.epochs = 100
-		self.batch_size = [8, 8]
-		self.eval_freq = 1
-
-		self.lr_adaptive = 'none'
-		self.lr_decay = 10
-		self.lr_steps = [60, 100]
-		self.loss_c_current = 0
-		self.loss_c_previous = 0
-		self.save_attention = -1
-
-
-		self.alpha = 1
-		self.beta = [1, 1, 1]
-		self.gamma = 1
-		self.mu = 0
-
-		self.train_metric = "all"
-		self.dann_warmup = False
-
-		self.path_exp = self.modality + '/'
-		if not os.path.isdir(self.path_exp):
-			os.makedirs(self.path_exp)
-		self.writer_train = SummaryWriter(self.path_exp + '/tensorboard_train')  # for tensorboardX
-		self.writer_val = SummaryWriter(self.path_exp + '/tensorboard_val')  # for tensorboardX
-
-		self.pretrain_source = False
-		self.clip_gradient = None
-
-		self.dis_DA = 'none'
-		self.use_target = 'none'
-		self.add_fc = 1
-		self.place_dis = ['Y', 'Y', 'N']
-		self.place_adv = ['Y', 'Y']
-		self.pred_normalize = 'N'
-		self.add_loss_DA = 'none'
-		self.print_freq = 10
-		self.show_freq = 10
-		self.ens_DA = 'none'
-
-		self.end = time.time()
-		self.end_val = time.time()
-
-		self.tensorboard = True
-		self.arch = "resnet50"
-		self.save_model = False
-		self.labels_available = True
-		self.adv_DA = "RevGrad"
-
 		self.best_prec1 = 0
+
+
+		#======= Setting up losses and the criterion ======#
 
 		if self.loss_type == 'nll':
 			self.criterion = torch.nn.CrossEntropyLoss()
 			self.criterion_domain = torch.nn.CrossEntropyLoss()
 		else:
 			raise ValueError("Unknown loss type")
+		self.loss_c_current = 0
+		self.loss_c_previous = 0
+		self.save_attention = -1
+
+		self.end = time.time()
+		self.end_val = time.time()
+
+		#======= For lightning to use custom optimizer ======#
+		self.automatic_optimization  = False
 
 	def _prepare_DA(self, num_class, base_model, modality): # convert the model to DA framework
 		if base_model == 'c3d': # C3D mode: in construction...
@@ -1134,6 +1085,9 @@ class VideoModel(pl.LightningModule):
 			out_source = out_source / out_source.var().log()
 			out_target = out_target / out_target.var().log()
 
+
+		#======= return dictionary and loggings ======#
+
 		result_dict = {'batch_time': batch_time, 'loss': loss.item(), 'top1_verb': prec1_verb.item(), 'top5_verb': prec5_verb.item(), 'top1_noun': prec1_noun.item(), 'top5_noun': prec5_noun.item(), 'top1_action': prec1_action, 'top5_action': prec5_action, 'loss_c': loss_classification.item(), 'loss_c_verb': loss_verb.item(), 'loss_c_noun': loss_noun.item()}
 		
 		self.log("Prec@1 Verb", result_dict["top1_verb"], prog_bar=True)
@@ -1189,6 +1143,8 @@ class VideoModel(pl.LightningModule):
 
 		n_iter_train = self.current_epoch * self.batch_size[0] # calculate the total iteration
 		# embedding
+
+		#======= writing to Summary writer======#
 
 		self.writer_train.add_scalar("loss/verb", losses_c, self.current_epoch)
 		self.writer_train.add_scalar("loss/noun", losses_c_noun, self.current_epoch)
@@ -1326,6 +1282,8 @@ class VideoModel(pl.LightningModule):
 		batch_time = time.time() - self.end_val
 		self.end_val = time.time()
 
+		#======= return dictionary and loggings ======#
+		
 		result_dict = {'batch_time': batch_time, 'loss': loss.item(), 'top1_verb': prec1_verb.item(), 'top5_verb': prec5_verb.item(), 'top1_noun': prec1_noun.item(), 'top5_noun': prec5_noun.item(), 'top1_action': prec1_action, 'top5_action': prec5_action}
 	
 		self.log("Prec@1 Verb", result_dict["top1_verb"], prog_bar=True)
@@ -1401,86 +1359,7 @@ class VideoModel(pl.LightningModule):
 			The loss(es) caluclated 
 		"""
 
-		(val_data, val_label, _) = batch
-		i = batch_idx
-
-		val_size_ori = val_data.size()  # original shape
-		batch_val_ori = val_size_ori[0]
-
-		# add dummy tensors to keep the same batch size for each epoch (for the last epoch)
-		if batch_val_ori < self.batch_size[0]:
-			val_data_dummy = torch.zeros(self.batch_size[0] - batch_val_ori, val_size_ori[1], val_size_ori[2])
-			val_data_dummy = val_data_dummy.type_as(val_data)
-			val_data = torch.cat((val_data, val_data_dummy))
-
-		# add dummy tensors to make sure batch size can be divided by gpu #
-		gpu_count = 1
-		if val_data.size(0) % gpu_count != 0:
-			val_data_dummy = torch.zeros(gpu_count - val_data.size(0) % gpu_count, val_data.size(1), val_data.size(2))
-			val_data_dummy = val_data_dummy.type_as(val_data)
-			val_data = torch.cat((val_data, val_data_dummy))
-
-		val_label_verb = val_label[0]
-		val_label_noun = val_label[1]
-		with torch.no_grad():
-
-			if self.baseline_type == 'frame':
-				val_label_verb_frame = val_label_verb.unsqueeze(1).repeat(1,self.val_segments).view(-1) # expand the size for all the frames
-				val_label_noun_frame = val_label_noun.unsqueeze(1).repeat(1, self.val_segments).view(-1)  # expand the size for all the frames
-
-			# compute output
-			_, _, _, _, _, attn_val, out_val, out_val_2, pred_domain_val, feat_val = self(val_data, val_data, [0]*len(self.beta), 0, is_train=False, reverse=False)
-
-			# ignore dummy tensors
-			attn_val, out_val, out_val_2, pred_domain_val, feat_val = removeDummy(attn_val, out_val, out_val_2, pred_domain_val, feat_val, batch_val_ori)
-
-			# measure accuracy and record loss
-			label_verb = val_label_verb_frame if self.baseline_type == 'frame' else val_label_verb
-			label_noun = val_label_noun_frame if self.baseline_type == 'frame' else val_label_noun
-
-			# store the embedding
-			if self.tensorboard:
-				self.feat_val_display = feat_val[1] if self.current_epoch == 0 else torch.cat((self.feat_val_display, feat_val[1]), 0)
-				self.label_val_verb_display = label_verb if self.current_epoch == 0 else torch.cat((self.label_val_verb_display, label_verb), 0)
-				self.label_val_noun_display = label_noun if self.current_epoch == 0 else torch.cat((self.label_val_noun_display, label_noun), 0)
-
-			pred_verb = out_val[0]
-			pred_noun = out_val[1]
-
-			if self.baseline_type == 'tsn':
-				pred_verb = pred_verb.view(val_label.size(0), -1, self.num_class).mean(dim=1) # average all the segments (needed when num_segments != val_segments)
-				pred_noun = pred_noun.view(val_label.size(0), -1, self.num_class).mean(dim=1) # average all the segments (needed when num_segments != val_segments)
-
-			loss_verb = self.criterion(pred_verb, label_verb)
-			loss_noun = self.criterion(pred_noun, label_noun)
-			if self.train_metric == "all":
-				loss = 0.5 * (loss_verb + loss_noun)
-			elif self.train_metric == "noun":
-				loss = loss_noun  # 0.5*(loss_verb+loss_noun)
-			elif self.train_metric == "verb":
-				loss = loss_verb  # 0.5*(loss_verb+loss_noun)
-			else:
-				raise Exception("invalid metric to train")
-			prec1_verb, prec5_verb = self.accuracy(pred_verb.data, label_verb, topk=(1, 5))
-			prec1_noun, prec5_noun = self.accuracy(pred_noun.data, label_noun, topk=(1, 5))
-			prec1_action, prec5_action = self.multitask_accuracy((pred_verb.data, pred_noun.data), (label_verb, label_noun),
-															topk=(1, 5))
-
-		# measure elapsed time
-		batch_time = time.time() - self.end_val
-		self.end_val = time.time()
-
-		result_dict = {'batch_time': batch_time, 'loss': loss.item(), 'top1_verb': prec1_verb.item(), 'top5_verb': prec5_verb.item(), 'top1_noun': prec1_noun.item(), 'top5_noun': prec5_noun.item(), 'top1_action': prec1_action, 'top5_action': prec5_action}
-	
-		self.log("Prec@1 Verb", result_dict["top1_verb"], prog_bar=True)
-		self.log("Prec@1 Noun", result_dict["top1_noun"], prog_bar=True)
-		self.log("Prec@1 Action", result_dict["top1_action"], prog_bar=True)
-		self.log("Prec@5 Verb", result_dict["top5_verb"], prog_bar=True)
-		self.log("Prec@5 Noun", result_dict["top5_noun"], prog_bar=True)
-		self.log("Prec@5 Action", result_dict["top5_action"], prog_bar=True)
-		self.log("Loss total", result_dict["loss"], prog_bar=True)
-
-		return result_dict["loss"]
+		return self.validation_step(batch, batch_idx, 0)
 
 def removeDummy(attn, out_1, out_2, pred_domain, feat, batch_size):
 	attn = attn[:batch_size]

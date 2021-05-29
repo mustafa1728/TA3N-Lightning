@@ -1,8 +1,4 @@
 
-
-
-
-
 train_file = None
 train_short_file = None
 val_file = None
@@ -34,7 +30,7 @@ def open_log_files(args):
         val_short_file = open(path_exp + 'val_short.log', 'w')
         train_file = open(path_exp + 'train.log', 'w')
         val_file = open(path_exp + 'val.log', 'w')
-	val_best_file = open(path_exp + 'best_val.log', 'a')
+        val_best_file = open(path_exp + 'best_val.log', 'a')
 
 def write_log_files(line_time, best_prec1):
     global train_file, train_short_file, val_file, val_short_file, val_best_file

@@ -1,30 +1,16 @@
-import argparse
-import time
-import sys
-
+import numpy as np
 import json
 from json import encoder
 
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.parallel
 import torch.optim
-import pandas as pd
-from torch.autograd import Variable
-from sklearn.metrics import confusion_matrix
 
 from pytorch_lightning import Trainer
 
-from dataset import TSNDataSet
-from models_lightning import VideoModel
-from utils.utils import plot_confusion_matrix
-
 from colorama import init
 from colorama import Fore, Back, Style
-from tqdm import tqdm
-from time import sleep
-
 
 from utils.opts import parser
 from utils.model_init import initialise_tester

@@ -1,10 +1,60 @@
 import os
-from colorama import init
-from colorama import Fore, Back, Style
-from models_lightning import VideoModel
-import torch.backends.cudnn as cudnn
-import torch
+from colorama import Fore, Back
 
+from models_lightning import VideoModel
+
+import torch
+import torch.backends.cudnn as cudnn
+
+from tensorboardX import SummaryWriter
+
+def set_hyperparameters(model, args):
+    model.optimizerName = args.optimizer
+    model.loss_type = args.loss_type
+    model.lr = args.lr
+    model.momentum = args.momentum
+    model.weight_decay = args.weight_decay
+    model.epochs = args.epochs
+    model.batch_size = args.batch_size
+    model.eval_freq = args.eval_freq
+
+    model.lr_adaptive = args.lr_adaptive
+    model.lr_decay = args.lr_decay
+    model.lr_steps = args.lr_steps
+
+    model.alpha = args.alpha
+    model.beta = args.beta
+    model.gamma = args.gamma
+    model.mu = args.mu
+
+    model.train_metric = args.train_metric
+    model.dann_warmup = args.dann_warmup
+
+    model.tensorboard = True
+    model.path_exp = model.modality + '/'
+    if not os.path.isdir(model.path_exp):
+        os.makedirs(model.path_exp)
+    model.writer_train = SummaryWriter(model.path_exp + '/tensorboard_train')  # for tensorboardX
+    model.writer_val = SummaryWriter(model.path_exp + '/tensorboard_val')  # for tensorboardX
+
+    model.pretrain_source = args.pretrain_source
+    model.clip_gradient = args.clip_gradient
+
+    model.dis_DA = args.dis_DA
+    model.use_target = args.use_target
+    model.add_fc = args.add_fc
+    model.place_dis = args.place_dis
+    model.place_adv = args.place_adv
+    model.pred_normalize = args.pred_normalize
+    model.add_loss_DA = args.add_loss_DA
+    model.print_freq = args.print_freq
+    model.show_freq = args.show_freq
+    model.ens_DA = args.ens_DA
+
+    model.arch = args.arch
+    model.save_model = args.save_model
+    model.labels_available = True
+    model.adv_DA = args.adv_DA
 
 def initialise_trainer(args):
 
@@ -103,6 +153,9 @@ def initialise_trainer(args):
     model.beta = args.beta
     model.gamma = args.gamma
     model.mu = args.mu
+
+    set_hyperparameters(model, args)
+
     return model
 
 
@@ -150,5 +203,8 @@ def initialise_tester(args):
         noun_net.eval()
     else:
         noun_net = None
+
+    set_hyperparameters(verb_net, args)
+    set_hyperparameters(noun_net, args)
 
     return (verb_net, noun_net)

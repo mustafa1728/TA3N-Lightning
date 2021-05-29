@@ -1,34 +1,26 @@
-# import argparse
-import os
+import numpy as np
 import time
-import shutil
+
 import torch
 import torch.nn.parallel
-import torch.nn.functional as F
-
 import torch.optim
-from torch.nn.utils import clip_grad_norm_
-
-
-
-from utils.loss import *
-from utils.opts import parser
-from utils.utils import randSelectBatch
-import math
-import pandas as pd
 
 from colorama import init
 from colorama import Fore, Back, Style
-import numpy as np
 
 
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from tensorboardX import SummaryWriter
 
+from utils.loss import *
+from utils.opts import parser
 from utils.model_init import initialise_trainer
 from utils.data_loaders import get_train_data_loaders, get_val_data_loaders
-from logging import open_log_files, write_log_files
+from utils.logging import open_log_files, write_log_files
+
+
+
 
 np.random.seed(1)
 torch.manual_seed(1)
