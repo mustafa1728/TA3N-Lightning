@@ -5,8 +5,7 @@ from models_lightning import VideoModel
 import torch
 import torch.backends.cudnn as cudnn
 
-import logging
-logging.basicConfig(format='%(asctime)s  |  %(message)s', datefmt='%d-%b-%y %H:%M:%S', level=logging.DEBUG)
+from utils.logging import *
 
 from tensorboardX import SummaryWriter
 
@@ -66,24 +65,24 @@ def set_hyperparameters(model, args):
 
 def initialise_trainer(args):
     
-    logging.debug('Baseline:' + args.baseline_type)
-    logging.debug('Frame aggregation method:' + args.frame_aggregation)
+    log_debug('Baseline:' + args.baseline_type)
+    log_debug('Frame aggregation method:' + args.frame_aggregation)
 
-    logging.debug('target data usage:' + args.use_target)
+    log_debug('target data usage:' + args.use_target)
     if args.use_target == 'none':
-        logging.debug('no Domain Adaptation')
+        log_debug('no Domain Adaptation')
     else:
         if args.dis_DA != 'none':
-            logging.debug('Apply the discrepancy-based Domain Adaptation approach:'+ args.dis_DA)
+            log_debug('Apply the discrepancy-based Domain Adaptation approach:'+ args.dis_DA)
             if len(args.place_dis) != args.add_fc + 2:
-                logging.error('len(place_dis) should be equal to add_fc + 2')
+                log_error('len(place_dis) should be equal to add_fc + 2')
                 raise ValueError('len(place_dis) should be equal to add_fc + 2')
 
         if args.adv_DA != 'none':
-            logging.debug('Apply the adversarial-based Domain Adaptation approach:'+ args.adv_DA)
+            log_debug('Apply the adversarial-based Domain Adaptation approach:'+ args.adv_DA)
 
         if args.use_bn != 'none':
-            logging.debug('Apply the adaptive normalization approach:'+ args.use_bn)
+            log_debug('Apply the adaptive normalization approach:'+ args.use_bn)
 
     # determine the categories
     #want to allow multi-label classes.
@@ -109,7 +108,7 @@ def initialise_trainer(args):
 
 
     #=== initialize the model ===#
-    logging.info('preparing the model......')
+    log_info('preparing the model......')
     model = VideoModel(num_class, args.baseline_type, args.frame_aggregation, args.modality,
             train_segments=args.num_segments, val_segments=args.val_segments, 
             base_model=args.arch, path_pretrained=args.pretrained,
@@ -121,30 +120,30 @@ def initialise_trainer(args):
             verbose=args.verbose, share_params=args.share_params)
 
     if args.optimizer == 'SGD':
-        logging.debug('using SGD')
+        log_debug('using SGD')
         model.optimizerName = 'SGD'
     elif args.optimizer == 'Adam':
-        logging.debug( 'using Adam')
+        log_debug( 'using Adam')
         model.optimizerName = 'Adam'
     else:
-        logging.error('optimizer not support or specified!!!')
+        log_error('optimizer not support or specified!!!')
         exit()
 
     #=== check point ===#
     start_epoch = 1
-    logging.debug('checking the checkpoint......')
+    log_debug('checking the checkpoint......')
     if args.resume:
         if os.path.isfile(args.resume):
             checkpoint = torch.load(args.resume)
             start_epoch = checkpoint['epoch'] + 1
             best_prec1 = checkpoint['best_prec1']
             model.load_state_dict(checkpoint['state_dict'])
-            logging.debug("=> loaded checkpoint '{}' (epoch {})".format(args.resume, checkpoint['epoch']))
+            log_debug("=> loaded checkpoint '{}' (epoch {})".format(args.resume, checkpoint['epoch']))
         if args.resume_hp:
-            logging.debug("=> loaded checkpoint hyper-parameters")
+            log_debug("=> loaded checkpoint hyper-parameters")
             model.optimizer.load_state_dict(checkpoint['optimizer'])
     else:
-        logging.error("=> no checkpoint found at '{}'".format(args.resume))
+        log_error("=> no checkpoint found at '{}'".format(args.resume))
 
     cudnn.benchmark = True
 
@@ -172,6 +171,9 @@ def set_hyperparameters_test(model, args):
     model.beta = [1, 1, 1]
     model.gamma = 1
     model.mu = 0
+
+    model.criterion = torch.nn.CrossEntropyLoss()
+    model.criterion_domain = torch.nn.CrossEntropyLoss()
 
 def initialise_tester(args):
     # New approach

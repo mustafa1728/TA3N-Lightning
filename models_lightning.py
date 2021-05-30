@@ -17,9 +17,7 @@ from colorama import Fore, Back, Style
 from tensorboardX import SummaryWriter
 from torch.nn.utils import clip_grad_norm_
 
-import logging
-logging.basicConfig(format='%(asctime)s  |  %(message)s', datefmt='%d-%b-%y %H:%M:%S', level=logging.INFO)
-
+from utils.logging import *
 from utils.loss import *
 
 torch.manual_seed(1)
@@ -115,7 +113,7 @@ class VideoModel(pl.LightningModule):
 			self.new_length = new_length
 
 		if verbose:
-			logging.info(("""
+			log_info(("""
 				Initializing TSN with base model: {}.
 				TSN Configurations:
 				input_modality:     {}
@@ -393,7 +391,7 @@ class VideoModel(pl.LightningModule):
 		super(VideoModel, self).train(mode)
 		count = 0
 		if self._enable_pbn:
-			logging.debug("Freezing BatchNorm2D except the first one.")
+			log_debug("Freezing BatchNorm2D except the first one.")
 			for m in self.base_model.modules():
 				if isinstance(m, nn.BatchNorm2d):
 					count += 1
@@ -795,13 +793,13 @@ class VideoModel(pl.LightningModule):
 		"""
 
 		if self.optimizerName == 'SGD':
-			logging.info('using SGD')
+			log_info('using SGD')
 			optimizer = torch.optim.SGD(self.parameters(), self.lr, momentum=self.momentum, weight_decay=self.weight_decay, nesterov=True)
 		elif self.optimizerName == 'Adam':
-			logging.info('using Adam')
+			log_info('using Adam')
 			optimizer = torch.optim.Adam(self.parameters(), self.lr, weight_decay=self.weight_decay)
 		else:
-			logging.error('optimizer not support or specified!!!')
+			log_error('optimizer not support or specified!!!')
 		
 		return optimizer
 
@@ -910,7 +908,7 @@ class VideoModel(pl.LightningModule):
 			if self.clip_gradient is not None:
 				total_norm = clip_grad_norm_(self.parameters(), self.clip_gradient)
 				if total_norm > self.clip_gradient and self.verbose:
-					logging.debug("clipping gradient: {} with coef {}".format(total_norm, args.clip_gradient / total_norm))
+					log_debug("clipping gradient: {} with coef {}".format(total_norm, args.clip_gradient / total_norm))
 
 			self.optimizers().step()
 
@@ -1074,7 +1072,7 @@ class VideoModel(pl.LightningModule):
 		if self.clip_gradient is not None:
 			total_norm = clip_grad_norm_(self.parameters(), self.clip_gradient)
 			if total_norm > self.clip_gradient and self.verbose:
-				logging.debug("clipping gradient: {} with coef {}".format(total_norm, self.clip_gradient / total_norm))
+				log_debug("clipping gradient: {} with coef {}".format(total_norm, self.clip_gradient / total_norm))
 
 		self.optimizers().step()
 
@@ -1267,14 +1265,10 @@ class VideoModel(pl.LightningModule):
 
 			loss_verb = self.criterion(pred_verb, label_verb)
 			loss_noun = self.criterion(pred_noun, label_noun)
-			if self.train_metric == "all":
-				loss = 0.5 * (loss_verb + loss_noun)
-			elif self.train_metric == "noun":
-				loss = loss_noun  # 0.5*(loss_verb+loss_noun)
-			elif self.train_metric == "verb":
-				loss = loss_verb  # 0.5*(loss_verb+loss_noun)
-			else:
-				raise Exception("invalid metric to train")
+
+
+			loss = 0.5 * (loss_verb + loss_noun)
+		
 			prec1_verb, prec5_verb = self.accuracy(pred_verb.data, label_verb, topk=(1, 5))
 			prec1_noun, prec5_noun = self.accuracy(pred_noun.data, label_noun, topk=(1, 5))
 			prec1_action, prec5_action = self.multitask_accuracy((pred_verb.data, pred_noun.data), (label_verb, label_noun),
@@ -1310,30 +1304,42 @@ class VideoModel(pl.LightningModule):
 
 		if self.labels_available:
 
-			prec1_val = 0
-			prec1_verb_val = 0
-			prec1_noun_val = 0
+			self.losses_val = 0
+			self.prec1_val = 0
+			self.prec1_verb_val = 0
+			self.prec1_noun_val = 0
+			self.prec5_val = 0
+			self.prec5_verb_val = 0
+			self.prec5_noun_val = 0
 
 			count = 0
 			for l in validation_step_outputs:
 				for dict in l:
 					count+=1
-					prec1_val += dict["top1_action"]
-					prec1_verb_val += dict["top1_verb"]
-					prec1_noun_val += dict["top1_noun"]
+					self.losses_val += dict["loss"]
+					self.prec1_val += dict["top1_action"]
+					self.prec1_verb_val += dict["top1_verb"]
+					self.prec1_noun_val += dict["top1_noun"]
+					self.prec5_val += dict["top5_action"]
+					self.prec5_verb_val += dict["top5_verb"]
+					self.prec5_noun_val += dict["top5_noun"]
 
 			if not (count == 0):
-				prec1_val /= count
-				prec1_verb_val /= count
-				prec1_noun_val /= count
+				self.losses_val /= count
+				self.prec1_val /= count
+				self.prec1_verb_val /= count
+				self.prec1_noun_val /= count
+				self.prec5_val /= count
+				self.prec5_verb_val /= count
+				self.prec5_noun_val /= count
 
 			# remember best prec@1 and save checkpoint
 			if self.train_metric == "all":
-				prec1 = prec1_val
+				prec1 = self.prec1_val
 			elif self.train_metric == "noun":
-				prec1 = prec1_noun_val
+				prec1 = self.prec1_noun_val
 			elif self.train_metric == "verb":
-				prec1 = prec1_verb_val
+				prec1 = self.prec1_verb_val
 			else:
 				raise Exception("invalid metric to train")
 				
@@ -1343,7 +1349,7 @@ class VideoModel(pl.LightningModule):
 
 				line_update = ' ==> updating the best accuracy' if is_best else ''
 				line_best = "Best score {} vs current score {}".format(self.best_prec1, prec1) + line_update
-				logging.info( line_best)
+				log_info( line_best)
 				# val_short_file.write('%.3f\n' % prec1)
 
 			self.best_prec1 = max(prec1, self.best_prec1)
