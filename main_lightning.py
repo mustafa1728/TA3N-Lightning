@@ -20,6 +20,7 @@ from utils.data_loaders import get_train_data_loaders, get_val_data_loaders
 from utils.logging import open_log_files, write_log_files
 
 import logging
+logging.basicConfig(format='%(asctime)s  |  %(message)s', datefmt='%d-%b-%y %H:%M:%S', level=logging.DEBUG)
 
 np.random.seed(1)
 torch.manual_seed(1)
@@ -38,7 +39,7 @@ def main():
 
 	#========== model init ========#
 
-	logging.info(Fore.CYAN + 'Initialising model......')
+	logging.info('Initialising model......')
 	model = initialise_trainer(args)
 
 	#========== log files init ========#
@@ -47,16 +48,16 @@ def main():
 	
 	#========== Data loading ========#
 	
-	logging.info(Fore.CYAN + 'loading data......')
+	logging.info('Loading data......')
 
 	if args.use_opencv:
-		logging.info("use opencv functions")
+		logging.debug("use opencv functions")
 
 	source_loader, target_loader = get_train_data_loaders(args)
 	
 	to_validate  = args.val_source_data != "none" and args.val_target_data != "none" 
 	if(to_validate):
-		logging.info(Fore.CYAN + 'Loading validation data......')
+		logging.info('Loading validation data......')
 		source_loader_val, target_loader_val = get_val_data_loaders(args)
 
 	#========== Callbacks and checkpoints ========#
@@ -83,7 +84,7 @@ def main():
 	
 	trainer = Trainer(min_epochs=20, max_epochs=30, callbacks=[checkpoint_callback], gpus = gpu_count, accelerator='ddp')
 
-	logging.info(Fore.CYAN + 'start training......')	
+	logging.info('Starting training......')	
 	start_train = time.time()
 
 	if(to_validate):
@@ -99,8 +100,8 @@ def main():
 	model.writer_train.close()
 	model.writer_val.close()
 	
-	logging.info( Fore.CYAN + 'Training complete')
-	logging.info('total training time:' + str(end_train - start_train))
+	logging.info('Training complete')
+	logging.info('Total training time:' + str(end_train - start_train))
 
 
 if __name__ == '__main__':

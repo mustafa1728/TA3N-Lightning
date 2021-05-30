@@ -6,6 +6,7 @@ import torch
 import torch.backends.cudnn as cudnn
 
 import logging
+logging.basicConfig(format='%(asctime)s  |  %(message)s', datefmt='%d-%b-%y %H:%M:%S', level=logging.DEBUG)
 
 from tensorboardX import SummaryWriter
 
@@ -65,24 +66,24 @@ def set_hyperparameters(model, args):
 
 def initialise_trainer(args):
     
-    logging.info('Baseline:' + args.baseline_type)
-    logging.info('Frame aggregation method:' + args.frame_aggregation)
+    logging.debug('Baseline:' + args.baseline_type)
+    logging.debug('Frame aggregation method:' + args.frame_aggregation)
 
-    logging.info('target data usage:' + args.use_target)
+    logging.debug('target data usage:' + args.use_target)
     if args.use_target == 'none':
-        logging.info('no Domain Adaptation')
+        logging.debug('no Domain Adaptation')
     else:
         if args.dis_DA != 'none':
-            logging.info('Apply the discrepancy-based Domain Adaptation approach:'+ args.dis_DA)
+            logging.debug('Apply the discrepancy-based Domain Adaptation approach:'+ args.dis_DA)
             if len(args.place_dis) != args.add_fc + 2:
                 logging.error('len(place_dis) should be equal to add_fc + 2')
                 raise ValueError('len(place_dis) should be equal to add_fc + 2')
 
         if args.adv_DA != 'none':
-            logging.info('Apply the adversarial-based Domain Adaptation approach:'+ args.adv_DA)
+            logging.debug('Apply the adversarial-based Domain Adaptation approach:'+ args.adv_DA)
 
         if args.use_bn != 'none':
-            logging.info('Apply the adaptive normalization approach:'+ args.use_bn)
+            logging.debug('Apply the adaptive normalization approach:'+ args.use_bn)
 
     # determine the categories
     #want to allow multi-label classes.
@@ -120,10 +121,10 @@ def initialise_trainer(args):
             verbose=args.verbose, share_params=args.share_params)
 
     if args.optimizer == 'SGD':
-        logging.info('using SGD')
+        logging.debug('using SGD')
         model.optimizerName = 'SGD'
     elif args.optimizer == 'Adam':
-        logging.info( 'using Adam')
+        logging.debug( 'using Adam')
         model.optimizerName = 'Adam'
     else:
         logging.error('optimizer not support or specified!!!')
@@ -131,16 +132,16 @@ def initialise_trainer(args):
 
     #=== check point ===#
     start_epoch = 1
-    logging.info('checking the checkpoint......')
+    logging.debug('checking the checkpoint......')
     if args.resume:
         if os.path.isfile(args.resume):
             checkpoint = torch.load(args.resume)
             start_epoch = checkpoint['epoch'] + 1
             best_prec1 = checkpoint['best_prec1']
             model.load_state_dict(checkpoint['state_dict'])
-            logging.info("=> loaded checkpoint '{}' (epoch {})".format(args.resume, checkpoint['epoch']))
+            logging.debug("=> loaded checkpoint '{}' (epoch {})".format(args.resume, checkpoint['epoch']))
         if args.resume_hp:
-            logging.info("=> loaded checkpoint hyper-parameters")
+            logging.debug("=> loaded checkpoint hyper-parameters")
             model.optimizer.load_state_dict(checkpoint['optimizer'])
     else:
         logging.error("=> no checkpoint found at '{}'".format(args.resume))
@@ -165,6 +166,12 @@ def initialise_trainer(args):
 
     return model
 
+def set_hyperparameters_test(model, args):
+    model.batch_size = [args.bS]
+    model.alpha = 1
+    model.beta = [1, 1, 1]
+    model.gamma = 1
+    model.mu = 0
 
 def initialise_tester(args):
     # New approach
@@ -191,6 +198,7 @@ def initialise_tester(args):
     verb_base_dict = {'.'.join(k.split('.')[1:]): v for k,v in list(verb_checkpoint['state_dict'].items())}
     verb_net.load_state_dict(verb_base_dict)
     # verb_net = torch.nn.DataParallel(verb_net)
+    set_hyperparameters_test(verb_net, args)
     verb_net.eval()
 
     if args.noun_weights is not None:
@@ -207,11 +215,11 @@ def initialise_tester(args):
         noun_base_dict = {'.'.join(k.split('.')[1:]): v for k,v in list(noun_checkpoint['state_dict'].items())}
         noun_net.load_state_dict(noun_base_dict)
         # noun_net = torch.nn.DataParallel(noun_net.cuda())
+        set_hyperparameters_test(noun_net, args)
         noun_net.eval()
     else:
         noun_net = None
 
-    set_hyperparameters(verb_net, args)
-    set_hyperparameters(noun_net, args)
+    
 
     return (verb_net, noun_net)

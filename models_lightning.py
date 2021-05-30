@@ -18,6 +18,8 @@ from tensorboardX import SummaryWriter
 from torch.nn.utils import clip_grad_norm_
 
 import logging
+logging.basicConfig(format='%(asctime)s  |  %(message)s', datefmt='%d-%b-%y %H:%M:%S', level=logging.INFO)
+
 from utils.loss import *
 
 torch.manual_seed(1)
@@ -391,7 +393,7 @@ class VideoModel(pl.LightningModule):
 		super(VideoModel, self).train(mode)
 		count = 0
 		if self._enable_pbn:
-			logging.info("Freezing BatchNorm2D except the first one.")
+			logging.debug("Freezing BatchNorm2D except the first one.")
 			for m in self.base_model.modules():
 				if isinstance(m, nn.BatchNorm2d):
 					count += 1
@@ -793,13 +795,13 @@ class VideoModel(pl.LightningModule):
 		"""
 
 		if self.optimizerName == 'SGD':
-			logging.info(Fore.YELLOW + 'using SGD')
+			logging.info('using SGD')
 			optimizer = torch.optim.SGD(self.parameters(), self.lr, momentum=self.momentum, weight_decay=self.weight_decay, nesterov=True)
 		elif self.optimizerName == 'Adam':
-			logging.info(Fore.YELLOW + 'using Adam')
+			logging.info('using Adam')
 			optimizer = torch.optim.Adam(self.parameters(), self.lr, weight_decay=self.weight_decay)
 		else:
-			logging.info(Back.RED + 'optimizer not support or specified!!!')
+			logging.error('optimizer not support or specified!!!')
 		
 		return optimizer
 
@@ -908,7 +910,7 @@ class VideoModel(pl.LightningModule):
 			if self.clip_gradient is not None:
 				total_norm = clip_grad_norm_(self.parameters(), self.clip_gradient)
 				if total_norm > self.clip_gradient and self.verbose:
-					logging.info("clipping gradient: {} with coef {}".format(total_norm, args.clip_gradient / total_norm))
+					logging.debug("clipping gradient: {} with coef {}".format(total_norm, args.clip_gradient / total_norm))
 
 			self.optimizers().step()
 
@@ -1072,7 +1074,7 @@ class VideoModel(pl.LightningModule):
 		if self.clip_gradient is not None:
 			total_norm = clip_grad_norm_(self.parameters(), self.clip_gradient)
 			if total_norm > self.clip_gradient and self.verbose:
-				logging.info("clipping gradient: {} with coef {}".format(total_norm, self.clip_gradient / total_norm))
+				logging.debug("clipping gradient: {} with coef {}".format(total_norm, self.clip_gradient / total_norm))
 
 		self.optimizers().step()
 
@@ -1341,7 +1343,7 @@ class VideoModel(pl.LightningModule):
 
 				line_update = ' ==> updating the best accuracy' if is_best else ''
 				line_best = "Best score {} vs current score {}".format(self.best_prec1, prec1) + line_update
-				logging.info(Fore.YELLOW + line_best)
+				logging.info( line_best)
 				# val_short_file.write('%.3f\n' % prec1)
 
 			self.best_prec1 = max(prec1, self.best_prec1)

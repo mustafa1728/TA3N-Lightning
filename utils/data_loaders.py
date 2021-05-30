@@ -117,8 +117,6 @@ def get_test_data_loaders(args):
             )
     data_loader = torch.utils.data.DataLoader(data_set, batch_size=args.bS, shuffle=False, num_workers=args.workers, pin_memory=True)
 
-    data_gen = tqdm(data_loader)
-
     output = []
     attn_values = torch.Tensor()
 
