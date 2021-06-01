@@ -1,0 +1,9 @@
+PATHS:
+  PATH_DATA_ROOT: "data/"
+  PATH_LABELS_ROOT: "annotations/"
+DATASET:
+  DATASET: "epic"
+  MODALITY: "RGB"
+TESTER:
+  WEIGHTS: "model/action-model/Testexp-SGD-share_params_Y-lr_3e-3-bS_128_207/epic-5seg-disDA_none-alpha_0-advDA_RevGrad-beta_0.75_0.75_0.5-useBN_none-addlossDA_attentive_entropy-gamma_0.003-ensDA_none-mu_0-useAttn_TransAttn-n_attn_1/RGB/checkpoint.pth.tar"
+  

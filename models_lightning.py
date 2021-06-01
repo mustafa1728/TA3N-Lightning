@@ -69,10 +69,10 @@ class VideoModel(pl.LightningModule):
 				train_segments=5, val_segments=25,
 				base_model='resnet101', path_pretrained='', new_length=None,
 				before_softmax=True,
-				dropout_i=0.5, dropout_v=0.5, use_bn='none', ens_DA='none',
+				dropout_i=0.5, dropout_v=0.5, use_bn=None, ens_DA=None,
 				crop_num=1, partial_bn=True, verbose=True, add_fc=1, fc_dim=1024,
 				n_rnn=1, rnn_cell='LSTM', n_directions=1, n_ts=5,
-				use_attn='TransAttn', n_attn=1, use_attn_frame='none',
+				use_attn='TransAttn', n_attn=1, use_attn_frame=None,
 				share_params='Y'):
 		super().__init__()
 		super(VideoModel, self).__init__()
@@ -238,7 +238,7 @@ class VideoModel(pl.LightningModule):
 
 
 		# BN for the above layers
-		if self.use_bn != 'none':  # S & T: use AdaBN (ICLRW 2017) approach
+		if self.use_bn != None:  # S & T: use AdaBN (ICLRW 2017) approach
 			self.bn_shared_S = nn.BatchNorm1d(feat_shared_dim)  # BN for the shared layers
 			self.bn_shared_T = nn.BatchNorm1d(feat_shared_dim)
 			self.bn_source_S = nn.BatchNorm1d(feat_frame_dim)  # BN for the source feature layers
@@ -360,7 +360,7 @@ class VideoModel(pl.LightningModule):
 			constant_(self.fc_classifier_video_noun_target.bias, 0)
 
 		# BN for the above layers
-		if self.use_bn != 'none':  # S & T: use AdaBN (ICLRW 2017) approach
+		if self.use_bn != None:  # S & T: use AdaBN (ICLRW 2017) approach
 			self.bn_source_video_S = nn.BatchNorm1d(feat_video_dim)
 			self.bn_source_video_T = nn.BatchNorm1d(feat_video_dim)
 			self.bn_source_video_2_S = nn.BatchNorm1d(feat_video_dim)
@@ -623,8 +623,8 @@ class VideoModel(pl.LightningModule):
 		feat_fc_target = self.fc_feature_shared_target(feat_base_target) if self.share_params == 'N' else self.fc_feature_shared_source(feat_base_target)
 
 		# adaptive BN
-		if self.use_bn != 'none':
-			feat_fc_source, feat_fc_target = self.domainAlign(feat_fc_source, feat_fc_target, is_train, 'shared', self.alpha.item(), num_segments, 1)
+		if self.use_bn != None:
+			feat_fc_source, feat_fc_target = self.domainAlign(feat_fc_source, feat_fc_target, is_train, 'shared', self.alpha, num_segments, 1)
 
 		feat_fc_source = self.relu(feat_fc_source)
 		feat_fc_target = self.relu(feat_fc_target)
@@ -666,7 +666,7 @@ class VideoModel(pl.LightningModule):
 		pred_domain_all_source.append(pred_fc_domain_frame_source.view((batch_source, num_segments) + pred_fc_domain_frame_source.size()[-1:]))
 		pred_domain_all_target.append(pred_fc_domain_frame_target.view((batch_target, num_segments) + pred_fc_domain_frame_target.size()[-1:]))
 
-		if self.use_attn_frame != 'none': # attend the frame-level features only
+		if self.use_attn_frame != None: # attend the frame-level features only
 			feat_fc_source = self.get_attn_feat_frame(feat_fc_source, pred_fc_domain_frame_source)
 			feat_fc_target = self.get_attn_feat_frame(feat_fc_target, pred_fc_domain_frame_target)
 
@@ -699,7 +699,7 @@ class VideoModel(pl.LightningModule):
 			pred_fc_domain_video_relation_target = self.domain_classifier_relation(feat_fc_video_relation_target, beta)
 
 			# transferable attention
-			if self.use_attn != 'none': # get the attention weighting
+			if self.use_attn != None: # get the attention weighting
 				feat_fc_video_relation_source, attn_relation_source = self.get_attn_feat_relation(feat_fc_video_relation_source, pred_fc_domain_video_relation_source, num_segments)
 				feat_fc_video_relation_target, attn_relation_target = self.get_attn_feat_relation(feat_fc_video_relation_target, pred_fc_domain_video_relation_target, num_segments)
 			else:
@@ -718,8 +718,8 @@ class VideoModel(pl.LightningModule):
 			feat_fc_video_source_3_1 = self.tcl_3_1(feat_fc_video_source)
 			feat_fc_video_target_3_1 = self.tcl_3_1(feat_fc_video_target)
 
-			if self.use_bn != 'none':
-				feat_fc_video_source_3_1, feat_fc_video_target_3_1 = self.domainAlign(feat_fc_video_source_3_1, feat_fc_video_target_3_1, is_train, 'temconv_1', self.alpha.item(), num_segments, 1)
+			if self.use_bn != None:
+				feat_fc_video_source_3_1, feat_fc_video_target_3_1 = self.domainAlign(feat_fc_video_source_3_1, feat_fc_video_target_3_1, is_train, 'temconv_1', self.alpha, num_segments, 1)
 
 			feat_fc_video_source = self.relu(feat_fc_video_source_3_1)  # 16 x 1 x 5 x 512
 			feat_fc_video_target = self.relu(feat_fc_video_target_3_1)  # 16 x 1 x 5 x 512
@@ -898,7 +898,7 @@ class VideoModel(pl.LightningModule):
 				loss = loss_verb  # 0.5*(loss_verb+loss_noun)
 			else:
 				raise Exception("invalid metric to train")
-			#if args.ens_DA == 'MCD' and args.use_target != 'none':
+			#if args.ens_DA == 'MCD' and args.use_target != None:
 			#	loss += criterion(out_source_2, label)
 
 			# compute gradient and do SGD step
@@ -941,7 +941,7 @@ class VideoModel(pl.LightningModule):
 
 		# 2. calculate the loss for DA
 		# (I) discrepancy-based approach: discrepancy loss
-		if self.dis_DA != 'none' and self.use_target != 'none':
+		if self.dis_DA != None and self.use_target != None:
 			loss_discrepancy = 0
 
 			kernel_muls = [2.0]*2
@@ -993,7 +993,7 @@ class VideoModel(pl.LightningModule):
 			loss += self.alpha * loss_discrepancy
 
 		# (II) adversarial discriminative model: adversarial loss
-		if self.adv_DA != 'none' and self.use_target != 'none':
+		if self.adv_DA != None and self.use_target != None:
 			self.loss_adversarial = 0
 			pred_domain_all = []
 			pred_domain_target_all = []
@@ -1029,7 +1029,7 @@ class VideoModel(pl.LightningModule):
 
 		# (III) other loss
 		# 1. entropy loss for target data
-		if self.add_loss_DA == 'target_entropy' and self.use_target != 'none':
+		if self.add_loss_DA == 'target_entropy' and self.use_target != None:
 			loss_entropy_verb = cross_entropy_soft(out_target[0])
 			loss_entropy_noun = cross_entropy_soft(out_target[1])
 
@@ -1044,7 +1044,7 @@ class VideoModel(pl.LightningModule):
 			#loss += gamma * 0.5*(loss_entropy_verb+loss_entropy_noun)
 
 		# 3. attentive entropy loss
-		if self.add_loss_DA == 'attentive_entropy' and self.use_attn != 'none' and self.use_target != 'none':
+		if self.add_loss_DA == 'attentive_entropy' and self.use_attn != None and self.use_target != None:
 			loss_entropy_verb = attentive_entropy(torch.cat((out_verb, out_target[0]),0), pred_domain_all[1])
 			loss_entropy_noun = attentive_entropy(torch.cat((out_noun, out_target[1]), 0), pred_domain_all[1])
 
@@ -1135,7 +1135,7 @@ class VideoModel(pl.LightningModule):
 
 		if self.lr_adaptive == 'loss':
 			self.adjust_learning_rate_loss(self.optimizers(), self.lr_decay, losses_c, self.loss_c_previous, '>')
-		elif self.lr_adaptive == 'none' and self.current_epoch in self.lr_steps:
+		elif self.lr_adaptive == None and self.current_epoch in self.lr_steps:
 			self.adjust_learning_rate(self.optimizers(), self.lr_decay)
 		
 		self.loss_c_previous = losses_c
@@ -1151,7 +1151,7 @@ class VideoModel(pl.LightningModule):
 		self.writer_train.add_scalar("acc/verb", losses_c_verb, self.current_epoch)
 		self.writer_train.add_scalar("acc/noun", top1_noun, self.current_epoch)
 		self.writer_train.add_scalar("acc/action", top1_action, self.current_epoch)
-		if self.adv_DA != 'none' and self.use_target != 'none':
+		if self.adv_DA != None and self.use_target != None:
 			self.writer_train.add_scalar("loss/domain", self.loss_adversarial,self.current_epoch)
 
 	def accuracy(self, output, target, topk=(1,)):

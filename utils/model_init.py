@@ -13,7 +13,7 @@ def set_hyperparameters(model, cfg):
     model.optimizerName = cfg.TRAINER.OPTIMIZER_NAME
     model.loss_type = cfg.TRAINER.LOSS_TYPE
     model.lr = cfg.TRAINER.LR
-    model.momentum = cfg.TRAINER.MOMENTUMs
+    model.momentum = cfg.TRAINER.MOMENTUM
     model.weight_decay = cfg.TRAINER.WEIGHT_DECAY
     model.epochs = cfg.TRAINER.MAX_EPOCHS
     model.batch_size = cfg.TRAINER.BATCH_SIZE
@@ -27,8 +27,8 @@ def set_hyperparameters(model, cfg):
     model.gamma = cfg.HYPERPARAMETERS.GAMMA
     model.mu = cfg.HYPERPARAMETERS.MU
 
-    model.train_metric = cfg.train_metric
-    model.dann_warmup = cfg.dann_warmup
+    model.train_metric = cfg.TRAINER.TRAIN_METRIC
+    model.dann_warmup = cfg.TRAINER.DANN_WARMUP
 
     model.tensorboard = True
     model.path_exp = cfg.PATHS.EXP_PATH
@@ -135,11 +135,11 @@ def initialise_trainer(cfg):
             best_prec1 = checkpoint['best_prec1']
             model.load_state_dict(checkpoint['state_dict'])
             log_debug("=> loaded checkpoint '{}' (epoch {})".format(cfg.TRAINER.RESUME, checkpoint['epoch']))
-        if cfg.TRAINER.RESUME_HP:
-            log_debug("=> loaded checkpoint hyper-parameters")
-            model.optimizer.load_state_dict(checkpoint['optimizer'])
-    else:
-        log_error("=> no checkpoint found at '{}'".format(cfg.TRAINER.RESUME))
+            if cfg.TRAINER.RESUME_HP:
+                log_debug("=> loaded checkpoint hyper-parameters")
+                model.optimizer.load_state_dict(checkpoint['optimizer'])
+        else:
+            log_error("=> no checkpoint found at '{}'".format(cfg.TRAINER.RESUME))
 
     cudnn.benchmark = True
 
@@ -186,8 +186,8 @@ def initialise_tester(cfg):
         use_attn=cfg.MODEL.USE_ATTN, n_attn=cfg.MODEL.N_ATTN, use_attn_frame=cfg.MODEL.USE_ATTN_FRAME,
         verbose=cfg.TESTER.VERBOSE, before_softmax=False)
 
-    verb_checkpoint = torch.load(cfg.weights)
-
+    verb_checkpoint = torch.load(cfg.TESTER.WEIGHTS)
+    # print(verb_checkpoint)
     verb_base_dict = {'.'.join(k.split('.')[1:]): v for k,v in list(verb_checkpoint['state_dict'].items())}
     verb_net.load_state_dict(verb_base_dict)
     # verb_net = torch.nn.DataParallel(verb_net)

@@ -60,14 +60,14 @@ def log_warning(message):
     logger.warning(message)
 
 
-def open_log_files(args):
+def open_log_files(cfg):
     global train_file, train_short_file, val_file, val_short_file, val_best_file
 
     global path_exp, start_epoch
 
-    path_exp = args.exp_path + args.modality + '/'
+    path_exp = cfg.PATHS.EXP_PATH
     #--- open log files ---#
-    if args.resume:
+    if cfg.TRAINER.RESUME != "":
         train_file = open(path_exp + 'train.log', 'a')
         train_short_file = open(path_exp + 'train_short.log', 'a')
         val_file = open(path_exp + 'val.log', 'a')
@@ -98,7 +98,7 @@ def write_log_files(line_time, best_prec1):
     labels_available = True
     if labels_available:
         val_best_file.write('%.3f\n' % best_prec1)
-        val_file.write(line_time)
-        val_short_file.write(line_time)
+        val_file.write(best_prec1)
+        val_short_file.write(best_prec1)
         val_file.close()
         val_short_file.close()

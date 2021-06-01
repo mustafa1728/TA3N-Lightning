@@ -12,7 +12,7 @@ from yacs.config import CfgNode as CN
 
 _C = CN()
 
-_C.TO_VALIDATE = True # choices = [True, False]
+_C.TO_VALIDATE = False # choices = [True, False]
 
 
 # -----------------------------------------------------------------------------
@@ -32,9 +32,6 @@ if _C.TO_VALIDATE:
 else:
     _C.PATHS.VAL_DATASET_SOURCE= None 
     _C.PATHS.VAL_DATASET_TARGET= None 
-_C.PATHS.NUM_SOURCE= 16115 # number of training data (source)
-_C.PATHS.NUM_TARGET= 26115 # number of training data (target)
-
 _C.PATHS.PATH_DATA_SOURCE=os.path.join(_C.PATHS.PATH_DATA_ROOT, _C.PATHS.DATASET_SOURCE)
 _C.PATHS.PATH_DATA_TARGET=os.path.join(_C.PATHS.PATH_DATA_ROOT, _C.PATHS.DATASET_TARGET)
 if _C.TO_VALIDATE:
@@ -62,9 +59,13 @@ _C.PATHS.PATH_EXP=os.path.join(_C.PATHS.PATH_EXP_ROOT, "Testexp")
 _C.DATASET = CN()
 _C.DATASET.DATASET = "epic" # dataset choices = [hmdb_ucf, hmdb_ucf_small, ucf_olympic]
 _C.DATASET.NUM_CLASSES = "97,300"
-_C.DATASET.MODALITY = "ALL" # choices = [RGB ]
+_C.DATASET.NUM_SOURCE= 16115 # number of training data (source)
+_C.DATASET.NUM_TARGET= 26115 # number of training data (target)
+
+_C.DATASET.MODALITY = "RGB" # choices = [ALL, RGB, Audio, Flow]
 _C.DATASET.FRAME_TYPE = "feature" # choices = [frame]
 _C.DATASET.NUM_SEGMENTS = 5 # sample frame # of each video for training
+_C.DATASET.VAL_SEGMENTS = 5 # sample frame # of each video for training
 _C.DATASET.BASELINE_TYPE = "video" # choices = ['frame', 'tsn']
 _C.DATASET.FRAME_AGGREGATION = "trn-m" # method to integrate the frame-level features. choices = [avgpool, trn, trn-m, rnn, temconv]
 
@@ -82,8 +83,8 @@ _C.MODEL.PRED_NORMALIZE = "N" # choices  = [Y, N]
 _C.MODEL.WEIGHTED_CLASS_LOSS_DA = "N" # choices  = [Y, N]
 _C.MODEL.WEIGHTED_CLASS_LOSS = "N" # choices  = [Y, N]
 
-_C.MODEL.DROPOUT_I = 0.8
-_C.MODEL.DROPOUT_V = 0.8
+_C.MODEL.DROPOUT_I = 0.5
+_C.MODEL.DROPOUT_V = 0.5
 _C.MODEL.NO_PARTIALBN = True
 
 
@@ -92,7 +93,7 @@ if _C.MODEL.USE_TARGET == "none":
 	_C.MODEL.EXP_DA_NAME="baseline"
 else:
 	_C.MODEL.EXP_DA_NAME="DA"
-_C.MODEL.DIS_DA = None # choices  = [DAN, JAN]
+_C.MODEL.DIS_DA = "DAN" # choices  = [DAN, CORAL, JAN]
 _C.MODEL.ADV_POS_0 = "Y" # discriminator for relation features. choices  = [Y, N]
 _C.MODEL.ADV_DA = "RevGrad" # choices  = [None]
 _C.MODEL.ADD_LOSS_DA = "attentive_entropy" # choices  = [None, target_entropy, attentive_entropy]
@@ -128,6 +129,7 @@ _C.TRAINER.USE_TARGET = "uSv" # choices  = [uSv, Sv, none]
 _C.TRAINER.SHARE_PARAMS = "Y" # choices  = [Y, N]
 _C.TRAINER.PRETRAIN_SOURCE = False
 _C.TRAINER.VERBOSE = True
+_C.TRAINER.DANN_WARMUP = True
 
 # Learning configs
 _C.TRAINER.LOSS_TYPE = 'nll'
@@ -137,7 +139,7 @@ _C.TRAINER.LR_ADAPTIVE = None # choices = [None, loss, dann]
 _C.TRAINER.LR_STEPS = [10, 20]
 _C.TRAINER.MOMENTUM = 0.9
 _C.TRAINER.WEIGHT_DECAY = 0.0001
-_C.TRAINER.BATCH_SIZE = [128, 128*(_C.DATASET.NUM_TARGET/_C.DATASET.NUM_SOURCE), 128]
+_C.TRAINER.BATCH_SIZE = [128, int(128*_C.DATASET.NUM_TARGET/_C.DATASET.NUM_SOURCE), 128]
 _C.TRAINER.OPTIMIZER_NAME = "SGD" # choices = [SGD, Adam]
 _C.TRAINER.CLIP_GRADIENT = 20
 
@@ -152,7 +154,7 @@ _C.TRAINER.ACCELERATOR = "ddp"
 
 
 
-_C.PATHS.EXP_PATH = os.path.join(_C.DATASET.PATH_EXP + '_' + _C.TRAINER.OPTIMIZER_NAME + '-share_params_' + _C.MODEL.SHARE_PARAMS + '-lr_' + str(_C.TRAINER.LR) + '-bS_' + str(_C.TRAINER.BATCH_SIZE[0]), _C.DATASET.DATASET + '-'+ str(_C.DATASET.NUM_SEGMENTS) + '-seg-disDA_' + _C.MODEL.DIS_DA + '-alpha_' + str(_C.HYPERPARAMETERS.ALPHA) + '-advDA_' + _C.MODEL.ADV_DA + '-beta_' + str(_C.HYPERPARAMETERS.BETA[0])+ '_'+ str(_C.HYPERPARAMETERS.BETA[1])+'_'+ str(_C.HYPERPARAMETERS.BETA[2])+"_gamma_" + str(_C.HYPERPARAMETERS.GAMMA) + "_mu_" + str(_C.HYPERPARAMETERS.MU))
+_C.PATHS.EXP_PATH = os.path.join(_C.PATHS.PATH_EXP + '_' + _C.TRAINER.OPTIMIZER_NAME + '-share_params_' + _C.MODEL.SHARE_PARAMS + '-lr_' + str(_C.TRAINER.LR) + '-bS_' + str(_C.TRAINER.BATCH_SIZE[0]), _C.DATASET.DATASET + '-'+ str(_C.DATASET.NUM_SEGMENTS) + '-alpha_' + str(_C.HYPERPARAMETERS.ALPHA) + '-beta_' + str(_C.HYPERPARAMETERS.BETA[0])+ '_'+ str(_C.HYPERPARAMETERS.BETA[1])+'_'+ str(_C.HYPERPARAMETERS.BETA[2])+"_gamma_" + str(_C.HYPERPARAMETERS.GAMMA) + "_mu_" + str(_C.HYPERPARAMETERS.MU))
 
 
 # ---------------------------------------------------------------------------- #
@@ -162,12 +164,14 @@ _C.TESTER = CN()
 
 _C.TESTER.TEST_TARGET_DATA = os.path.join(_C.PATHS.PATH_DATA_ROOT, "target_test")
 
-_C.TESTER.WEIGHTS = os.path.join(_C.EXP_PATH , "checkpoint.pth.tar")
+_C.TESTER.WEIGHTS = os.path.join(_C.PATHS.EXP_PATH , "checkpoint.pth.tar")
 _C.TESTER.NOUN_WEIGHTS = None
+_C.TESTER.BATCH_SIZE = 512
+_C.TESTER.NOUN_TARGET_DATA = None
 _C.TESTER.RESULT_JSON = "test.json"
 _C.TESTER.TEST_SEGMENTS = 5 # sample frame # of each video for testing
-_C.TESTER.SAVE_SCORES = os.path.join(_C.EXP_PATH , "scores")
-_C.TESTER.SAVE_CONFUSION = os.path.join(_C.EXP_PATH , "confusion_matrix")
+_C.TESTER.SAVE_SCORES = os.path.join(_C.PATHS.EXP_PATH , "scores")
+_C.TESTER.SAVE_CONFUSION = os.path.join(_C.PATHS.EXP_PATH , "confusion_matrix")
 
 _C.TESTER.VERBOSE = True
 
@@ -180,6 +184,7 @@ _C.MODEL.RNN_CELL = "LSTM"
 _C.MODEL.N_DIRECTIONS = 1
 _C.MODEL.N_TS = 5
 _C.MODEL.TENSORBOARD = True
+_C.MODEL.FLOW_PREFIX = ""
 _C.TRAINER.JOBS = 2
 _C.TRAINER.EF = 1
 _C.TRAINER.PF = 50
