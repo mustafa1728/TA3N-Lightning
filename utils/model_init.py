@@ -9,53 +9,50 @@ from utils.logging import *
 
 from tensorboardX import SummaryWriter
 
-def set_hyperparameters(model, args):
-    model.optimizerName = args.optimizer
-    model.loss_type = args.loss_type
-    model.lr = args.lr
-    model.momentum = args.momentum
-    model.weight_decay = args.weight_decay
-    model.epochs = args.epochs
-    model.batch_size = args.batch_size
-    model.eval_freq = args.eval_freq
+def set_hyperparameters(model, cfg):
+    model.optimizerName = cfg.TRAINER.OPTIMIZER_NAME
+    model.loss_type = cfg.TRAINER.LOSS_TYPE
+    model.lr = cfg.TRAINER.LR
+    model.momentum = cfg.TRAINER.MOMENTUMs
+    model.weight_decay = cfg.TRAINER.WEIGHT_DECAY
+    model.epochs = cfg.TRAINER.MAX_EPOCHS
+    model.batch_size = cfg.TRAINER.BATCH_SIZE
 
-    model.lr_adaptive = args.lr_adaptive
-    model.lr_decay = args.lr_decay
-    model.lr_steps = args.lr_steps
+    model.lr_adaptive = cfg.TRAINER.LR_ADAPTIVE
+    model.lr_decay = cfg.TRAINER.LR_DECAY
+    model.lr_steps = cfg.TRAINER.LR_STEPS
 
-    model.alpha = args.alpha
-    model.beta = args.beta
-    model.gamma = args.gamma
-    model.mu = args.mu
+    model.alpha = cfg.HYPERPARAMETERS.ALPHA
+    model.beta = cfg.HYPERPARAMETERS.BETA
+    model.gamma = cfg.HYPERPARAMETERS.GAMMA
+    model.mu = cfg.HYPERPARAMETERS.MU
 
-    model.train_metric = args.train_metric
-    model.dann_warmup = args.dann_warmup
+    model.train_metric = cfg.train_metric
+    model.dann_warmup = cfg.dann_warmup
 
     model.tensorboard = True
-    model.path_exp = model.modality + '/'
+    model.path_exp = cfg.PATHS.EXP_PATH
     if not os.path.isdir(model.path_exp):
         os.makedirs(model.path_exp)
     model.writer_train = SummaryWriter(model.path_exp + '/tensorboard_train')  # for tensorboardX
     model.writer_val = SummaryWriter(model.path_exp + '/tensorboard_val')  # for tensorboardX
 
-    model.pretrain_source = args.pretrain_source
-    model.clip_gradient = args.clip_gradient
+    model.pretrain_source = cfg.TRAINER.PRETRAIN_SOURCE
+    model.clip_gradient = cfg.TRAINER.CLIP_GRADIENT
 
-    model.dis_DA = args.dis_DA
-    model.use_target = args.use_target
-    model.add_fc = args.add_fc
-    model.place_dis = args.place_dis
-    model.place_adv = args.place_adv
-    model.pred_normalize = args.pred_normalize
-    model.add_loss_DA = args.add_loss_DA
-    model.print_freq = args.print_freq
-    model.show_freq = args.show_freq
-    model.ens_DA = args.ens_DA
+    model.dis_DA = cfg.MODEL.DIS_DA
+    model.use_target = cfg.MODEL.USE_TARGET 
+    model.add_fc = cfg.MODEL.ADD_FC 
+    model.place_dis = cfg.MODEL.PLACE_DIS
+    model.place_adv = cfg.MODEL.PLACE_ADV
+    model.pred_normalize = cfg.MODEL.PRED_NORMALIZE
+    model.add_loss_DA = cfg.MODEL.ADD_LOSS_DA
+    model.ens_DA = cfg.MODEL.ENS_DA
 
-    model.arch = args.arch
-    model.save_model = args.save_model
+    model.arch = cfg.MODEL.ARCH
+    model.save_model = cfg.TRAINER.SAVE_MODEL
     model.labels_available = True
-    model.adv_DA = args.adv_DA
+    model.adv_DA = cfg.MODEL.ADV_DA 
 
     if model.loss_type == 'nll':
         model.criterion = torch.nn.CrossEntropyLoss()
@@ -63,36 +60,36 @@ def set_hyperparameters(model, args):
     else:
         raise ValueError("Unknown loss type")
 
-def initialise_trainer(args):
+def initialise_trainer(cfg):
     
-    log_debug('Baseline:' + args.baseline_type)
-    log_debug('Frame aggregation method:' + args.frame_aggregation)
+    log_debug('Baseline:' + cfg.DATASET.BASELINE_TYPE)
+    log_debug('Frame aggregation method:' + cfg.DATASET.FRAME_AGGREGATION)
 
-    log_debug('target data usage:' + args.use_target)
-    if args.use_target == 'none':
+    log_debug('target data usage:' + cfg.MODEL.USE_TARGET)
+    if cfg.MODEL.USE_TARGET is None:
         log_debug('no Domain Adaptation')
     else:
-        if args.dis_DA != 'none':
-            log_debug('Apply the discrepancy-based Domain Adaptation approach:'+ args.dis_DA)
-            if len(args.place_dis) != args.add_fc + 2:
+        if cfg.MODEL.DIS_DA is not None:
+            log_debug('Apply the discrepancy-based Domain Adaptation approach:'+ cfg.MODEL.DIS_DA)
+            if len(cfg.MODEL.PLACE_DIS) != cfg.MODEL.ADD_FC + 2:
                 log_error('len(place_dis) should be equal to add_fc + 2')
                 raise ValueError('len(place_dis) should be equal to add_fc + 2')
 
-        if args.adv_DA != 'none':
-            log_debug('Apply the adversarial-based Domain Adaptation approach:'+ args.adv_DA)
+        if cfg.MODEL.ADV_DA is not None:
+            log_debug('Apply the adversarial-based Domain Adaptation approach:'+ cfg.MODEL.ADV_DA)
 
-        if args.use_bn != 'none':
-            log_debug('Apply the adaptive normalization approach:'+ args.use_bn)
+        if cfg.MODEL.USE_BN is not None:
+            log_debug('Apply the adaptive normalization approach:'+ cfg.MODEL.USE_BN)
 
     # determine the categories
     #want to allow multi-label classes.
 
     #Original way to compute number of classes
-    ####class_names = [line.strip().split(' ', 1)[1] for line in open(args.class_file)]
+    ####class_names = [line.strip().split(' ', 1)[1] for line in open(cfg.class_file)]
     ####num_class = len(class_names)
 
     #New approach
-    num_class_str = args.num_class.split(",")
+    num_class_str = cfg.DATASET.NUM_CLASSES.split(",")
     #single class
     if len(num_class_str) < 1:
         raise Exception("Must specify a number of classes to train")
@@ -102,27 +99,27 @@ def initialise_trainer(args):
             num_class.append(int(num))
 
     #=== check the folder existence ===#
-    path_exp = args.exp_path + args.modality + '/'
+    path_exp = cfg.PATHS.EXP_PATH
     if not os.path.isdir(path_exp):
         os.makedirs(path_exp)
 
 
     #=== initialize the model ===#
     log_info('preparing the model......')
-    model = VideoModel(num_class, args.baseline_type, args.frame_aggregation, args.modality,
-            train_segments=args.num_segments, val_segments=args.val_segments, 
-            base_model=args.arch, path_pretrained=args.pretrained,
-            add_fc=args.add_fc, fc_dim = args.fc_dim,
-            dropout_i=args.dropout_i, dropout_v=args.dropout_v, partial_bn=not args.no_partialbn,
-            use_bn=args.use_bn if args.use_target != 'none' else 'none', ens_DA=args.ens_DA if args.use_target != 'none' else 'none',
-            n_rnn=args.n_rnn, rnn_cell=args.rnn_cell, n_directions=args.n_directions, n_ts=args.n_ts,
-            use_attn=args.use_attn, n_attn=args.n_attn, use_attn_frame=args.use_attn_frame,
-            verbose=args.verbose, share_params=args.share_params)
+    model = VideoModel(num_class, cfg.DATASET.BASELINE_TYPE, cfg.DATASET.FRAME_AGGREGATION, cfg.DATASET.MODALITY,
+            train_segments=cfg.DATASET.NUM_SEGMENTS, val_segments=cfg.DATASET.NUM_SEGMENTS, 
+            base_model=cfg.MODEL.ARCH, path_pretrained=cfg.TRAINER.PRETRAINED,
+            add_fc=cfg.MODEL.ADD_FC, fc_dim = cfg.MODEL.FC_DIM,
+            dropout_i=cfg.MODEL.DROPOUT_I, dropout_v=cfg.MODEL.DROPOUT_V, partial_bn=not cfg.MODEL.NO_PARTIALBN,
+            use_bn=cfg.MODEL.USE_BN if cfg.MODEL.USE_TARGET is not None else None, ens_DA=cfg.MODEL.ENS_DA if cfg.MODEL.USE_TARGET is not None else None,
+            n_rnn=cfg.MODEL.N_RNN, rnn_cell=cfg.MODEL.RNN_CELL, n_directions=cfg.MODEL.N_DIRECTIONS, n_ts=cfg.MODEL.N_TS,
+            use_attn=cfg.MODEL.USE_ATTN, n_attn=cfg.MODEL.N_ATTN, use_attn_frame=cfg.MODEL.USE_ATTN_FRAME,
+            verbose=cfg.TRAINER.VERBOSE, share_params=cfg.MODEL.SHARE_PARAMS)
 
-    if args.optimizer == 'SGD':
+    if cfg.TRAINER.OPTIMIZER_NAME == 'SGD':
         log_debug('using SGD')
         model.optimizerName = 'SGD'
-    elif args.optimizer == 'Adam':
+    elif cfg.TRAINER.OPTIMIZER_NAME == 'Adam':
         log_debug( 'using Adam')
         model.optimizerName = 'Adam'
     else:
@@ -130,20 +127,19 @@ def initialise_trainer(args):
         exit()
 
     #=== check point ===#
-    start_epoch = 1
     log_debug('checking the checkpoint......')
-    if args.resume:
-        if os.path.isfile(args.resume):
-            checkpoint = torch.load(args.resume)
+    if cfg.TRAINER.RESUME != "":
+        if os.path.isfile(cfg.TRAINER.RESUME):
+            checkpoint = torch.load(cfg.TRAINER.RESUME)
             start_epoch = checkpoint['epoch'] + 1
             best_prec1 = checkpoint['best_prec1']
             model.load_state_dict(checkpoint['state_dict'])
-            log_debug("=> loaded checkpoint '{}' (epoch {})".format(args.resume, checkpoint['epoch']))
-        if args.resume_hp:
+            log_debug("=> loaded checkpoint '{}' (epoch {})".format(cfg.TRAINER.RESUME, checkpoint['epoch']))
+        if cfg.TRAINER.RESUME_HP:
             log_debug("=> loaded checkpoint hyper-parameters")
             model.optimizer.load_state_dict(checkpoint['optimizer'])
     else:
-        log_error("=> no checkpoint found at '{}'".format(args.resume))
+        log_error("=> no checkpoint found at '{}'".format(cfg.TRAINER.RESUME))
 
     cudnn.benchmark = True
 
@@ -151,33 +147,28 @@ def initialise_trainer(args):
 
     # --- Optimizer ---#
     # define loss function (criterion) and optimizer
-    if args.loss_type == 'nll':
+    if cfg.TRAINER.LOSS_TYPE == 'nll':
         model.loss_type = 'nll'
     else:
         raise ValueError("Unknown loss type")
 
-    # --- Parameters ---#
-    model.beta = args.beta
-    model.gamma = args.gamma
-    model.mu = args.mu
-
-    set_hyperparameters(model, args)
+    set_hyperparameters(model, cfg)
 
     return model
 
-def set_hyperparameters_test(model, args):
-    model.batch_size = [args.bS]
-    model.alpha = 1
-    model.beta = [1, 1, 1]
-    model.gamma = 1
-    model.mu = 0
+def set_hyperparameters_test(model, cfg):
+    model.batch_size = cfg.TRAINER.BATCH_SIZE
+    model.alpha = cfg.HYPERPARAMETERS.ALPHA
+    model.beta = cfg.HYPERPARAMETERS.BETA
+    model.gamma = cfg.HYPERPARAMETERS.GAMMA
+    model.mu = cfg.HYPERPARAMETERS.MU
 
     model.criterion = torch.nn.CrossEntropyLoss()
     model.criterion_domain = torch.nn.CrossEntropyLoss()
 
-def initialise_tester(args):
+def initialise_tester(cfg):
     # New approach
-    num_class_str = args.num_class.split(",")
+    num_class_str = cfg.DATASET.NUM_CLASSES.split(",")
     # single class
     if len(num_class_str) < 1:
         raise Exception("Must specify a number of classes to train")
@@ -187,37 +178,37 @@ def initialise_tester(args):
         num_class.append(int(num))
 
         
-    verb_net = VideoModel(num_class, args.baseline_type, args.frame_aggregation, args.modality,
-        train_segments=args.test_segments if args.baseline_type == 'video' else 1, val_segments=args.test_segments if args.baseline_type == 'video' else 1,
-        base_model=args.arch, add_fc=args.add_fc, fc_dim=args.fc_dim, share_params=args.share_params,
-        dropout_i=args.dropout_i, dropout_v=args.dropout_v, use_bn=args.use_bn, partial_bn=False,
-        n_rnn=args.n_rnn, rnn_cell=args.rnn_cell, n_directions=args.n_directions, n_ts=args.n_ts,
-        use_attn=args.use_attn, n_attn=args.n_attn, use_attn_frame=args.use_attn_frame,
-        verbose=args.verbose, before_softmax=False)
+    verb_net = VideoModel(num_class, cfg.DATASET.BASELINE_TYPE, cfg.DATASET.FRAME_AGGREGATION, cfg.DATASET.MODALITY,
+        train_segments=cfg.TESTER.TEST_SEGMENTS if cfg.DATASET.BASELINE_TYPE == 'video' else 1, val_segments=cfg.TESTER.TEST_SEGMENTS if cfg.DATASET.BASELINE_TYPE == 'video' else 1,
+        base_model=cfg.MODEL.ARCH, add_fc=cfg.MODEL.ADD_FC, fc_dim=cfg.MODEL.FC_DIM, share_params=cfg.MODEL.SHARE_PARAMS,
+        dropout_i=cfg.MODEL.DROPOUT_I, dropout_v=cfg.MODEL.DROPOUT_V, use_bn=cfg.MODEL.USE_BN, partial_bn=False,
+        n_rnn=cfg.MODEL.N_RNN, rnn_cell=cfg.MODEL.RNN_CELL, n_directions=cfg.MODEL.N_DIRECTIONS, n_ts=cfg.MODEL.N_TS,
+        use_attn=cfg.MODEL.USE_ATTN, n_attn=cfg.MODEL.N_ATTN, use_attn_frame=cfg.MODEL.USE_ATTN_FRAME,
+        verbose=cfg.TESTER.VERBOSE, before_softmax=False)
 
-    verb_checkpoint = torch.load(args.weights)
+    verb_checkpoint = torch.load(cfg.weights)
 
     verb_base_dict = {'.'.join(k.split('.')[1:]): v for k,v in list(verb_checkpoint['state_dict'].items())}
     verb_net.load_state_dict(verb_base_dict)
     # verb_net = torch.nn.DataParallel(verb_net)
-    set_hyperparameters_test(verb_net, args)
+    set_hyperparameters_test(verb_net, cfg)
     verb_net.eval()
 
-    if args.noun_weights is not None:
-        noun_net = VideoModel(num_class, args.baseline_type, args.frame_aggregation, args.modality,
-                        train_segments=args.test_segments if args.baseline_type == 'video' else 1,
-                        val_segments=args.test_segments if args.baseline_type == 'video' else 1,
-                        base_model=args.arch, add_fc=args.add_fc, fc_dim=args.fc_dim, share_params=args.share_params,
-                        dropout_i=args.dropout_i, dropout_v=args.dropout_v, use_bn=args.use_bn, partial_bn=False,
-                        n_rnn=args.n_rnn, rnn_cell=args.rnn_cell, n_directions=args.n_directions, n_ts=args.n_ts,
-                        use_attn=args.use_attn, n_attn=args.n_attn, use_attn_frame=args.use_attn_frame,
-                        verbose=args.verbose, before_softmax=False)
-        noun_checkpoint = torch.load(args.noun_weights)
+    if cfg.TESTER.NOUN_WEIGHTS is not None:
+        noun_net = VideoModel(num_class, cfg.DATASET.BASELINE_TYPE, cfg.DATASET.FRAME_AGGREGATION, cfg.DATASET.MODALITY,
+                        train_segments=cfg.TESTER.TEST_SEGMENTS if cfg.DATASET.BASELINE_TYPE == 'video' else 1,
+                        val_segments=cfg.TESTER.TEST_SEGMENTS if cfg.DATASET.BASELINE_TYPE == 'video' else 1,
+                        base_model=cfg.MODEL.ARCH, add_fc=cfg.MODEL.ADD_FC, fc_dim=cfg.MODEL.FC_DIM, share_params=cfg.MODEL.SHARE_PARAMS,
+                        dropout_i=cfg.MODEL.DROPOUT_I, dropout_v=cfg.MODEL.DROPOUT_V, use_bn=cfg.MODEL.USE_BN, partial_bn=False,
+                        n_rnn=cfg.MODEL.N_RNN, rnn_cell=cfg.MODEL.RNN_CELL, n_directions=cfg.MODEL.N_DIRECTIONS, n_ts=cfg.MODEL.N_TS,
+                        use_attn=cfg.MODEL.USE_ATTN, n_attn=cfg.MODEL.N_ATTN, use_attn_frame=cfg.MODEL.USE_ATTN_FRAME,
+                        verbose=cfg.TESTER.VERBOSE, before_softmax=False)
+        noun_checkpoint = torch.load(cfg.TESTER.NOUN_WEIGHTS)
 
         noun_base_dict = {'.'.join(k.split('.')[1:]): v for k,v in list(noun_checkpoint['state_dict'].items())}
         noun_net.load_state_dict(noun_base_dict)
         # noun_net = torch.nn.DataParallel(noun_net.cuda())
-        set_hyperparameters_test(noun_net, args)
+        set_hyperparameters_test(noun_net, cfg)
         noun_net.eval()
     else:
         noun_net = None
