@@ -7,9 +7,13 @@ This repository contains the code used to produce the baseline results (TA3N) fo
 # Lightning Implementation 
 
 Notebook added to show demo and verify working correctly:
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1OXHG5cAS-mNRjjKzjt73ljZYg5bBMQv7#offline=true&sandboxMode=false)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1ZDiqTHjjaREiA9eCOJSlSARR2Dpbuqno#offline=true&sandboxMode=false)
 
-Instructions to run:
+### Instructions to run:
+
+Make necessary modifications to hyperparameter in configs folder, and then run using its path as a command line argument.
+
+To test default configs, run:
 ~~~
 python3 main.py --cfg configs/train_epic_RGB.yaml
 python3 test.py --cfg configs/test_epic_RGB.yaml --ckpt <model.pth.tar>
