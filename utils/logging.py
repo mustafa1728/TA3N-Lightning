@@ -98,7 +98,7 @@ def write_log_files(line_time, best_prec1):
     labels_available = True
     if labels_available:
         val_best_file.write('%.3f\n' % best_prec1)
-        val_file.write(best_prec1)
-        val_short_file.write(best_prec1)
+        val_file.write('%.3f\n' % best_prec1)
+        val_short_file.write('%.3f\n' % best_prec1)
         val_file.close()
         val_short_file.close()

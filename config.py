@@ -23,35 +23,30 @@ _C.PATHS.PATH_DATA_ROOT = "data/" # directory where the feature pickles are stor
 _C.PATHS.PATH_LABELS_ROOT = "annotations/" # directory where the annotations are stored. Depends on users
 _C.PATHS.PATH_EXP_ROOT="model/action-model/" # directory where the checkpoints are to be stored. Depends on users
 
-
 _C.PATHS.DATASET_SOURCE="source_train" # depends on users
 _C.PATHS.DATASET_TARGET="target_train" # depends on users
-if _C.TO_VALIDATE:
-    _C.PATHS.VAL_DATASET_SOURCE="source_val" # depends on users
-    _C.PATHS.VAL_DATASET_TARGET="target_val" # depends on users
-else:
-    _C.PATHS.VAL_DATASET_SOURCE= None 
-    _C.PATHS.VAL_DATASET_TARGET= None 
+
+
+# training   
 _C.PATHS.PATH_DATA_SOURCE=os.path.join(_C.PATHS.PATH_DATA_ROOT, _C.PATHS.DATASET_SOURCE)
 _C.PATHS.PATH_DATA_TARGET=os.path.join(_C.PATHS.PATH_DATA_ROOT, _C.PATHS.DATASET_TARGET)
-if _C.TO_VALIDATE:
-    _C.PATHS.PATH_VAL_DATA_SOURCE=os.path.join(_C.PATHS.PATH_DATA_ROOT, _C.PATHS.VAL_DATASET_SOURCE)
-    _C.PATHS.PATH_VAL_DATA_TARGET=os.path.join(_C.PATHS.PATH_DATA_ROOT, _C.PATHS.VAL_DATASET_TARGET)
-else:
-    _C.PATHS.PATH_VAL_DATA_SOURCE= None 
-    _C.PATHS.PATH_VAL_DATA_SOURCE= None 
 
 _C.PATHS.TRAIN_SOURCE_LIST=os.path.join(_C.PATHS.PATH_LABELS_ROOT, 'EPIC_100_uda_source_train.pkl') # '/domain_adaptation_source_train_pre-release_v3.pkl'
 _C.PATHS.TRAIN_TARGET_LIST=os.path.join(_C.PATHS.PATH_LABELS_ROOT, 'EPIC_100_uda_target_train_timestamps.pkl') # '/domain_adaptation_target_train_pre-release_v6.pkl'
-if _C.TO_VALIDATE:
-    _C.PATHS.VAL_SOURCE_LIST=os.path.join(_C.PATHS.PATH_LABELS_ROOT, "EPIC_100_uda_source_val.pkl")
-    _C.PATHS.VAL_TARGET_LIST=os.path.join(_C.PATHS.PATH_LABELS_ROOT, "EPIC_100_uda_target_val.pkl")
-else:
-    _C.PATHS.VAL_SOURCE_LIST= None 
-    _C.PATHS.VAL_TARGET_LIST= None 
+
 _C.PATHS.VAL_LIST=os.path.join(_C.PATHS.PATH_LABELS_ROOT, "EPIC_100_uda_target_test_timestamps.pkl")
 _C.PATHS.PATH_EXP=os.path.join(_C.PATHS.PATH_EXP_ROOT, "Testexp")
 
+
+# validation
+_C.PATHS.VAL_DATASET_SOURCE="source_val" # depends on users
+_C.PATHS.VAL_DATASET_TARGET="target_val" # depends on users
+
+_C.PATHS.PATH_VAL_DATA_SOURCE=os.path.join(_C.PATHS.PATH_DATA_ROOT, _C.PATHS.VAL_DATASET_SOURCE)
+_C.PATHS.PATH_VAL_DATA_TARGET=os.path.join(_C.PATHS.PATH_DATA_ROOT, _C.PATHS.VAL_DATASET_TARGET)
+
+_C.PATHS.VAL_SOURCE_LIST=os.path.join(_C.PATHS.PATH_LABELS_ROOT, "EPIC_100_uda_source_val.pkl")
+_C.PATHS.VAL_TARGET_LIST=os.path.join(_C.PATHS.PATH_LABELS_ROOT, "EPIC_100_uda_target_val.pkl")
 
 # -----------------------------------------------------------------------------
 # Dataset

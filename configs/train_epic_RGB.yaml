@@ -1,4 +1,4 @@
-TO_VALIDATE: False
+TO_VALIDATE: True
 PATHS:
   PATH_DATA_ROOT: "data/"
   PATH_LABELS_ROOT: "annotations/"

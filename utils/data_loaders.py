@@ -88,7 +88,7 @@ def get_val_data_loaders(cfg):
     source_sampler_val = torch.utils.data.sampler.RandomSampler(source_set_val)
     source_loader_val = torch.utils.data.DataLoader(source_set_val, batch_size=cfg.TRAINER.BATCH_SIZE[0], shuffle=False, sampler=source_sampler_val, num_workers=cfg.TRAINER.JOBS, pin_memory=True)
 
-    target_set_val = TSNDataSet(cfg.val_target_data+".pkl", cfg.val_target_list, num_dataload=num_target_val, num_segments=cfg.DATASET.VAL_SEGMENTS,
+    target_set_val = TSNDataSet(cfg.PATHS.PATH_VAL_DATA_TARGET+".pkl", cfg.PATHS.VAL_TARGET_LIST, num_dataload=num_target_val, num_segments=cfg.DATASET.VAL_SEGMENTS,
                     new_length=data_length, modality=cfg.DATASET.MODALITY,
                     image_tmpl="img_{:05d}.t7" if cfg.DATASET.MODALITY in ["RGB", "RGBDiff", "RGBDiff2", "RGBDiffplus"] else cfg.MODEL.FLOW_PREFIX + "{}_{:05d}.t7",
                     random_shift=False,
