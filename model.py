@@ -1202,7 +1202,7 @@ class VideoModel(pl.LightningModule):
 			accuracies.append(accuracy_at_k)
 		return tuple(accuracies)
 		
-	def validation_step(self, batch, batch_idx, dataset_idx):
+	def validation_step(self, batch, batch_idx):
 		"""
 		Automatically called by lightning while validating a single batch
 		Args:
@@ -1313,16 +1313,15 @@ class VideoModel(pl.LightningModule):
 			self.prec5_noun_val = 0
 
 			count = 0
-			for l in validation_step_outputs:
-				for dict in l:
-					count+=1
-					self.losses_val += dict["loss"]
-					self.prec1_val += dict["top1_action"]
-					self.prec1_verb_val += dict["top1_verb"]
-					self.prec1_noun_val += dict["top1_noun"]
-					self.prec5_val += dict["top5_action"]
-					self.prec5_verb_val += dict["top5_verb"]
-					self.prec5_noun_val += dict["top5_noun"]
+			for dict in validation_step_outputs:
+				count+=1
+				self.losses_val += dict["loss"]
+				self.prec1_val += dict["top1_action"]
+				self.prec1_verb_val += dict["top1_verb"]
+				self.prec1_noun_val += dict["top1_noun"]
+				self.prec5_val += dict["top5_action"]
+				self.prec5_verb_val += dict["top5_verb"]
+				self.prec5_noun_val += dict["top5_noun"]
 
 			if not (count == 0):
 				self.losses_val /= count
@@ -1367,7 +1366,7 @@ class VideoModel(pl.LightningModule):
 			The loss(es) caluclated 
 		"""
 
-		return self.validation_step(batch, batch_idx, 0)
+		return self.validation_step(batch, batch_idx)
 
 def removeDummy(attn, out_1, out_2, pred_domain, feat, batch_size):
 	attn = attn[:batch_size]

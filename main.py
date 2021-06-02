@@ -41,8 +41,6 @@ def main():
 	cfg.merge_from_file(args.cfg)
 	cfg.freeze()
 
-	# log_info(str(cfg))
-
 	path_exp = os.path.join(cfg.PATHS.EXP_PATH, cfg.DATASET.MODALITY)
 
 	#========== model init ========#
@@ -97,7 +95,7 @@ def main():
 	start_train = time.time()
 
 	if(cfg.TO_VALIDATE):
-		trainer.fit(model, (source_loader, target_loader), (source_loader_val, target_loader_val))
+		trainer.fit(model, (source_loader, target_loader), target_loader_val)
 	else:
 		trainer.fit(model, (source_loader, target_loader))
 	
