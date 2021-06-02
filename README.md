@@ -1,9 +1,22 @@
 # EPIC-KITCHENS-100 UDA Challenge Source Code
 This repository contains the code used to produce the baseline results (TA3N) for the EPIC-KITCHENS-100 UDA Challenge. 
 
-Notebook added to show demo and verify working correctly:
 
+
+
+# Lightning Implementation 
+
+Notebook added to show demo and verify working correctly:
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1OXHG5cAS-mNRjjKzjt73ljZYg5bBMQv7#offline=true&sandboxMode=false)
+
+Instructions to run:
+~~~
+python3 main.py --cfg configs/train_epic_RGB.yaml
+python3 test.py --cfg configs/test_epic_RGB.yaml --ckpt <model.pth.tar>
+~~~
+
+
+# UDA Challenge Original Code
 
 Some modifications have been made to the original TA3N code base to produce results on EPIC-KITCHENS-100 including:
 1. Multiple classification heads to produce predictions for verb and nouns.
