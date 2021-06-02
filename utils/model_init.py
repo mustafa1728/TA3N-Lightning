@@ -1,6 +1,6 @@
 import os
 
-from models_lightning import VideoModel
+from model import VideoModel
 
 import torch
 import torch.backends.cudnn as cudnn

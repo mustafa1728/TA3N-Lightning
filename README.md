@@ -11,8 +11,8 @@ Notebook added to show demo and verify working correctly:
 
 Instructions to run:
 ~~~
-python3 main_lightning.py --cfg configs/train_epic_RGB.yml
-python3 test_models_lightning.py --cfg configs/test_epic_RGB.yml
+python3 main.py --cfg configs/train_epic_RGB.yaml
+python3 test.py --cfg configs/test_epic_RGB.yaml --ckpt <model.pth.tar>
 ~~~
 
 
