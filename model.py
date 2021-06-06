@@ -1,5 +1,6 @@
 import time
 import numpy as np
+from math import ceil
 
 from torch import nn
 from torch.nn.init import *
@@ -9,7 +10,6 @@ import torch.nn.functional as F
 import torchvision
 
 import pytorch_lightning as pl
-import TRNmodule_lightning
 
 from colorama import init
 from colorama import Fore, Back, Style
@@ -24,6 +24,89 @@ torch.manual_seed(1)
 torch.cuda.manual_seed_all(1)
 
 init(autoreset=True)
+
+class TRNRelationModule(pl.LightningModule):
+    # this is the naive implementation of the n-frame relation module, as num_frames == num_frames_relation
+    def __init__(self, img_feature_dim, num_bottleneck, num_frames):
+        super(TRNRelationModule, self).__init__()
+        self.num_frames = num_frames
+        self.img_feature_dim = img_feature_dim
+        self.num_bottleneck = num_bottleneck
+        self.classifier = self.fc_fusion()
+    def fc_fusion(self):
+        # naive concatenate
+        classifier = nn.Sequential(
+                nn.ReLU(),
+                nn.Linear(self.num_frames * self.img_feature_dim, self.num_bottleneck),
+                nn.ReLU(),
+                )
+        return classifier
+    def forward(self, input):
+        input = input.view(input.size(0), self.num_frames*self.img_feature_dim)
+        input = self.classifier(input)
+        return input
+
+class TRNRelationModuleMultiScale(pl.LightningModule):
+    # Temporal Relation module in multiply scale, suming over [2-frame relation, 3-frame relation, ..., n-frame relation]
+
+    def __init__(self, img_feature_dim, num_bottleneck, num_frames):
+        super(TRNRelationModuleMultiScale, self).__init__()
+        self.subsample_num = 3 # how many relations selected to sum up
+        self.img_feature_dim = img_feature_dim
+        self.scales = [i for i in range(num_frames, 1, -1)] # generate the multiple frame relations
+
+        self.relations_scales = []
+        self.subsample_scales = []
+        for scale in self.scales:
+            relations_scale = self.return_relationset(num_frames, scale)
+            self.relations_scales.append(relations_scale)
+            self.subsample_scales.append(min(self.subsample_num, len(relations_scale))) # how many samples of relation to select in each forward pass
+
+        # self.num_class = num_class
+        self.num_frames = num_frames
+        self.fc_fusion_scales = nn.ModuleList() # high-tech modulelist
+        for i in range(len(self.scales)):
+            scale = self.scales[i]
+            fc_fusion = nn.Sequential(
+                        nn.ReLU(),
+                        nn.Linear(scale * self.img_feature_dim, num_bottleneck),
+                        nn.ReLU(),
+                        )
+
+            self.fc_fusion_scales += [fc_fusion]
+
+        self.log('Multi-Scale Temporal Relation Network Module in use', ['%d-frame relation' % i for i in self.scales])
+
+    def forward(self, input):
+        # the first one is the largest scale
+        act_scale_1 = input[:, self.relations_scales[0][0] , :]
+        act_scale_1 = act_scale_1.view(act_scale_1.size(0), self.scales[0] * self.img_feature_dim)
+        act_scale_1 = self.fc_fusion_scales[0](act_scale_1)
+        act_scale_1 = act_scale_1.unsqueeze(1) # add one dimension for the later concatenation
+        act_all = act_scale_1.clone()
+
+        for scaleID in range(1, len(self.scales)):
+            act_relation_all = torch.zeros_like(act_scale_1)
+            # iterate over the scales
+            num_total_relations = len(self.relations_scales[scaleID])
+            num_select_relations = self.subsample_scales[scaleID]
+            idx_relations_evensample = [int(ceil(i * num_total_relations / num_select_relations)) for i in range(num_select_relations)]
+
+            #for idx in idx_relations_randomsample:
+            for idx in idx_relations_evensample:
+                act_relation = input[:, self.relations_scales[scaleID][idx], :]
+                act_relation = act_relation.view(act_relation.size(0), self.scales[scaleID] * self.img_feature_dim)
+                act_relation = self.fc_fusion_scales[scaleID](act_relation)
+                act_relation = act_relation.unsqueeze(1)  # add one dimension for the later concatenation
+                act_relation_all += act_relation
+
+            act_all = torch.cat((act_all, act_relation_all), 1)
+        return act_all
+
+    def return_relationset(self, num_frames, num_frames_relation):
+        import itertools
+        return list(itertools.combinations([i for i in range(num_frames)], num_frames_relation))
+
 
 # definition of Gradient Reversal Layer
 class GradReverse(Function):
@@ -262,12 +345,12 @@ class VideoModel(pl.LightningModule):
 
 		elif self.frame_aggregation == 'trn': # 4. TRN (ECCV 2018) ==> fix segment # for both train/val
 			self.num_bottleneck = 512
-			self.TRN = TRNmodule_lightning.RelationModule(feat_shared_dim, self.num_bottleneck, self.train_segments)
+			self.TRN = TRNRelationModule(feat_shared_dim, self.num_bottleneck, self.train_segments)
 			self.bn_trn_S = nn.BatchNorm1d(self.num_bottleneck)
 			self.bn_trn_T = nn.BatchNorm1d(self.num_bottleneck)
 		elif self.frame_aggregation == 'trn-m':  # 4. TRN (ECCV 2018) ==> fix segment # for both train/val
 			self.num_bottleneck = 256
-			self.TRN = TRNmodule_lightning.RelationModuleMultiScale(feat_shared_dim, self.num_bottleneck, self.train_segments)
+			self.TRN = TRNRelationModuleMultiScale(feat_shared_dim, self.num_bottleneck, self.train_segments)
 			self.bn_trn_S = nn.BatchNorm1d(self.num_bottleneck)
 			self.bn_trn_T = nn.BatchNorm1d(self.num_bottleneck)
 
@@ -802,41 +885,50 @@ class VideoModel(pl.LightningModule):
 			log_error('optimizer not support or specified!!!')
 		
 		return optimizer
-
-	def adjust_learning_rate(self, optimizer, decay):
-		"""Sets the learning rate to the initial LR decayed by 10 """
-		for param_group in optimizer.param_groups:
-			param_group['lr'] /= decay 
+		
 
 	def adjust_learning_rate_loss(self, optimizer, decay, stat_current, stat_previous, op):
 		ops = {'>': (lambda x, y: x > y), '<': (lambda x, y: x < y), '>=': (lambda x, y: x >= y), '<=': (lambda x, y: x <= y)}
 		if ops[op](stat_current, stat_previous):
 			for param_group in optimizer.param_groups:
 				param_group['lr'] /= decay
-
-	def training_step(self, train_batch, batch_idx):
+	
+	def get_parameters_watch_list(self):
 		"""
-		Automatically called by lightning while training a single batch
-		Args:
-			train_batch: an item of the dataloader(s) passed with the trainer
-			batch_idx: the batch index (which batch is currently being trained)
-		Returns:
-			The loss(es) caluclated after performing an optimiser step
+		Update this list for parameters to watch while training (ie log with MLFlow)
 		"""
-		
-		((source_data, source_label, source_id), (target_data, target_label, target_id)) = train_batch
-		i = batch_idx
+		return {
+			"alpha": self.alpha,
+			"beta": self.beta,
+			"mu": self.mu,
+			"last_epoch": self.current_epoch,
+		}
 
-		p = float(i + self.current_epoch * self.batch_size[0]) / (self.batch_size[0] * self.epochs)
-		beta_dann = 2. / (1. + np.exp(-1.0 * p)) - 1
-		self.beta = [beta_dann if self.beta[i] < 0 else self.beta[i] for i in range(len(self.beta))] # replace the default beta if value < 0
-		if self.dann_warmup:
-		    beta_new = [beta_dann*self.beta[i] for i in range(len(self.beta))]
-		else:
-			beta_new = self.beta
-		
-		if self.lr_adaptive == 'dann':
-			self.adjust_learning_rate_dann(self.optimizers(), p)
+	def _update_batch_epoch_factors(self, batch_id):
+		if self.current_epoch >= self._init_epochs:
+			delta_epoch = self.current_epoch - self._init_epochs
+			p = (batch_id + delta_epoch * self._nb_training_batches) / (
+				self._non_init_epochs * self._nb_training_batches
+			)
+			beta_dann = 2. / (1. + np.exp(-1.0 * p)) - 1
+			self._grow_fact = 2.0 / (1.0 + np.exp(-10 * p)) - 1
+
+			self.beta = [beta_dann if self.beta[i] < 0 else self.beta[i] for i in range(len(self.beta))] # replace the default beta if value < 0
+			if self.dann_warmup:
+				beta_new = [beta_dann*self.beta[i] for i in range(len(self.beta))]
+			else:
+				beta_new = self.beta
+			self.beta = beta_new
+
+			if self.lr_adaptive == 'dann':
+				for param_group in self.optimizers().param_groups:
+					param_group['lr'] /= p 
+
+		if self._adapt_lambda:
+			self.lamb_da = self._init_lambda * self._grow_fact
+
+	def compute_loss(self, batch, split_name = "V"):
+		((source_data, source_label, source_id), (target_data, target_label, target_id)) = train_batch	
 
 		source_size_ori = source_data.size()  # original shape
 		target_size_ori = target_data.size()  # original shape
@@ -870,52 +962,9 @@ class VideoModel(pl.LightningModule):
 
 		label_source_noun = source_label_noun_frame if self.baseline_type == 'frame' else source_label_noun  # determine the label for calculating the loss function
 		label_target_noun = target_label_noun_frame if self.baseline_type == 'frame' else target_label_noun
-		#====== pre-train source data ======#
-		if self.pretrain_source:
-			#------ forward pass data again ------#
-			_, out_source, out_source_2, _, _, _, _, _, _, _ = self(source_data, target_data, beta_new, mu, is_train=True, reverse=False)
-
-			# ignore dummy tensors
-			out_source_verb = out_source[0][:batch_source_ori]
-			out_source_noun = out_source[1][:batch_source_ori]
-			out_source_2 = out_source_2[:batch_source_ori]
-
-			#------ calculate the loss function ------#
-			# 1. calculate the classification loss
-			out_verb = out_source_verb
-			out_noun = out_source_noun
-			label_verb = label_source_verb
-			label_noun = label_source_noun
-
-			# MCD not used
-			loss_verb = self.criterion(out_verb, label_verb)
-			loss_noun = self.criterion(out_noun, label_noun)
-			if self.train_metric == "all":
-				loss = 0.5 * (loss_verb + loss_noun)
-			elif self.train_metric == "noun":
-				loss = loss_noun  # 0.5*(loss_verb+loss_noun)
-			elif self.train_metric == "verb":
-				loss = loss_verb  # 0.5*(loss_verb+loss_noun)
-			else:
-				raise Exception("invalid metric to train")
-			#if args.ens_DA == 'MCD' and args.use_target is not None:
-			#	loss += criterion(out_source_2, label)
-
-			# compute gradient and do SGD step
-			self.optimizers().zero_grad()
-			loss.backward()
-
-			if self.clip_gradient is not None:
-				total_norm = clip_grad_norm_(self.parameters(), self.clip_gradient)
-				if total_norm > self.clip_gradient and self.verbose:
-					log_debug("clipping gradient: {} with coef {}".format(total_norm, args.clip_gradient / total_norm))
-
-			self.optimizers().step()
 
 
-		### forward pass ###
-
-		attn_source, out_source, out_source_2, pred_domain_source, feat_source, attn_target, out_target, out_target_2, pred_domain_target, feat_target = self(source_data, target_data, beta_new, self.mu, is_train=True, reverse=False)
+		attn_source, out_source, out_source_2, pred_domain_source, feat_source, attn_target, out_target, out_target_2, pred_domain_target, feat_target = self(source_data, target_data, self.beta, self.mu, is_train=True, reverse=False)
 
 		attn_source, out_source, out_source_2, pred_domain_source, feat_source = removeDummy(attn_source, out_source, out_source_2, pred_domain_source, feat_source, batch_source_ori)
 		attn_target, out_target, out_target_2, pred_domain_target, feat_target = removeDummy(attn_target, out_target, out_target_2, pred_domain_target, feat_target, batch_target_ori)
@@ -994,7 +1043,7 @@ class VideoModel(pl.LightningModule):
 
 		# (II) adversarial discriminative model: adversarial loss
 		if self.adv_DA is not None and self.use_target is not None:
-			self.loss_adversarial = 0
+			loss_adversarial = 0
 			pred_domain_all = []
 			pred_domain_target_all = []
 
@@ -1023,9 +1072,9 @@ class VideoModel(pl.LightningModule):
 						pred_domain = pred_domain / pred_domain.var().log()
 					loss_adversarial_single = self.criterion_domain(pred_domain, domain_label.type_as(pred_domain).long())
 
-					self.loss_adversarial += loss_adversarial_single
+					loss_adversarial += loss_adversarial_single
 
-			loss += self.loss_adversarial
+			loss += loss_adversarial
 
 		# (III) other loss
 		# 1. entropy loss for target data
@@ -1086,73 +1135,49 @@ class VideoModel(pl.LightningModule):
 			out_target = out_target / out_target.var().log()
 
 
-		#======= return dictionary and loggings ======#
+		#======= return log_metrics ======#
 
-		result_dict = {'batch_time': batch_time, 'loss': loss.item(), 'top1_verb': prec1_verb.item(), 'top5_verb': prec5_verb.item(), 'top1_noun': prec1_noun.item(), 'top5_noun': prec5_noun.item(), 'top1_action': prec1_action, 'top5_action': prec5_action, 'loss_c': loss_classification.item(), 'loss_c_verb': loss_verb.item(), 'loss_c_noun': loss_noun.item()}
-		
-		self.log("Prec@1 Verb", result_dict["top1_verb"], prog_bar=True)
-		self.log("Prec@1 Noun", result_dict["top1_noun"], prog_bar=True)
-		self.log("Prec@1 Action", result_dict["top1_action"], prog_bar=True)
-		self.log("Prec@5 Verb", result_dict["top5_verb"], prog_bar=True)
-		self.log("Prec@5 Noun", result_dict["top5_noun"], prog_bar=True)
-		self.log("Prec@5 Action", result_dict["top5_action"], prog_bar=True)
-		self.log("Loss total", result_dict["loss"], prog_bar=True)
+		log_metrics = {'Loss Total': loss.item(), 'Prec@1 Verb': prec1_verb.item(), 'Prec@5 Verb': prec5_verb.item(), 'Prec@1 Noun': prec1_noun.item(), 'Prec@5 Noun': prec5_noun.item(), 'Prec@1 Action': prec1_action, 'Prec@5 Action': prec5_action}
 
-		return result_dict
+
+		return loss_classification, loss_adversarial, log_metrics
+
 	
-	def training_epoch_end(self, training_step_outputs):
+
+
+	def training_step(self, train_batch, batch_idx):
 		"""
-		Automatically called by lightning at the end of each training epoch
+		Automatically called by lightning while training a single batch
 		Args:
-			training_step_outputs: list of values returned by the training_step after each batch
+			train_batch: an item of the dataloader(s) passed with the trainer
+			batch_idx: the batch index (which batch is currently being trained)
+		Returns:
+			The loss(es) caluclated after performing an optimiser step
 		"""
+		self._update_batch_epoch_factors(train_batch, batch_idx)
 
-		print(" ")
+		task_loss, adv_loss, log_metrics = self.compute_loss(train_batch, split_name="T")
+		if self.current_epoch < self._init_epochs:
+			# init phase doesn't use few-shot learning
+			# ad-hoc decision but makes models more comparable between each other
+			loss = task_loss
+		else:
+			loss = task_loss + self.lamb_da * adv_loss
 
-		losses_c = 0
-		losses_c_verb = 0
-		losses_c_noun = 0
-		top1_verb = 0
-		top1_noun = 0
-		top1_action = 0
+		log_metrics = get_aggregated_metrics_from_dict(log_metrics)
+		log_metrics.update(get_metrics_from_parameter_dict(self.get_parameters_watch_list(), loss.device))
+		log_metrics["T_total_loss"] = loss
+		log_metrics["T_adv_loss"] = adv_loss
+		log_metrics["T_task_loss"] = task_loss
 
-		count = 0
-		for dict in training_step_outputs:
-			count+=1
-			losses_c += dict["loss_c"]
-			losses_c_verb += dict["loss_c_verb"]
-			losses_c_noun += dict["loss_c_noun"]
-			top1_verb += dict["top1_verb"]
-			top1_noun += dict["top1_noun"]
-			top1_action += dict["top1_action"]
-		if not (count == 0):
-			losses_c /= count
-			losses_c_verb /= count
-			losses_c_noun /= count
-			top1_verb /= count
-			top1_noun /= count
-			top1_action /= count
+		for key in log_metrics:
+			self.log(key, log_metrics[key])
 
-		if self.lr_adaptive == 'loss':
-			self.adjust_learning_rate_loss(self.optimizers(), self.lr_decay, losses_c, self.loss_c_previous, '>')
-		elif self.lr_adaptive == None and self.current_epoch in self.lr_steps:
-			self.adjust_learning_rate(self.optimizers(), self.lr_decay)
-		
-		self.loss_c_previous = losses_c
-
-
-		n_iter_train = self.current_epoch * self.batch_size[0] # calculate the total iteration
-		# embedding
-
-		#======= writing to Summary writer======#
-
-		self.writer_train.add_scalar("loss/verb", losses_c, self.current_epoch)
-		self.writer_train.add_scalar("loss/noun", losses_c_noun, self.current_epoch)
-		self.writer_train.add_scalar("acc/verb", losses_c_verb, self.current_epoch)
-		self.writer_train.add_scalar("acc/noun", top1_noun, self.current_epoch)
-		self.writer_train.add_scalar("acc/action", top1_action, self.current_epoch)
-		if self.adv_DA is not None and self.use_target is not None:
-			self.writer_train.add_scalar("loss/domain", self.loss_adversarial,self.current_epoch)
+		return {
+		"loss": log_metrics['Loss Total'],  # required, for backward pass
+		# "progress_bar": {"class_loss": task_loss},
+		# "log": log_metrics,
+		}
 
 	def accuracy(self, output, target, topk=(1,)):
 		"""Computes the precision@k for the specified values of k"""
@@ -1379,3 +1404,32 @@ def removeDummy(attn, out_1, out_2, pred_domain, feat, batch_size):
 	feat = [f[:batch_size] for f in feat]
 
 	return attn, out_1, out_2, pred_domain, feat
+
+# will be imported directly later
+def get_aggregated_metrics_from_dict(input_metric_dict):
+	"""Get a dictionary of the mean metric values (to log) from a dictionary of metric values"""
+	metric_dict = {}
+	for metric_name, metric_value in input_metric_dict.items():
+		metric_dim = len(metric_value.shape)
+		if metric_dim == 0:
+			metric_dict[metric_name] = metric_value
+		else:
+			metric_dict[metric_name] = metric_value.double().mean()
+	return metric_dict
+
+# will be imported directly later	
+def get_aggregated_metrics(metric_name_list, metric_outputs):
+    """Get a dictionary of the mean metric values (to log) from metric names and their values"""
+    metric_dict = {}
+    for metric_name in metric_name_list:
+        metric_dim = len(metric_outputs[0][metric_name].shape)
+        if metric_dim == 0:
+            metric_value = torch.stack([x[metric_name] for x in metric_outputs]).mean()
+        else:
+            metric_value = torch.cat([x[metric_name] for x in metric_outputs]).double().mean()
+        metric_dict[metric_name] = metric_value.item()
+    return metric_dict
+
+def get_metrics_from_parameter_dict(parameter_dict, device):
+    """Get a key-value pair from the hyperparameter dictionary"""
+    return {k: torch.tensor(v, device=device) for k, v in parameter_dict.items()}
