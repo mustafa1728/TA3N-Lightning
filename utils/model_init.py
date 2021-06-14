@@ -1,13 +1,11 @@
 import os
 
-from model import VideoModel
+from model import TA3NTrainer
 
 import torch
 import torch.backends.cudnn as cudnn
 
 from utils.logging import *
-
-from tensorboardX import SummaryWriter
 
 def set_hyperparameters(model, cfg):
     model.optimizerName = cfg.TRAINER.OPTIMIZER_NAME
@@ -34,8 +32,6 @@ def set_hyperparameters(model, cfg):
     model.path_exp = cfg.PATHS.EXP_PATH
     if not os.path.isdir(model.path_exp):
         os.makedirs(model.path_exp)
-    model.writer_train = SummaryWriter(model.path_exp + '/tensorboard_train')  # for tensorboardX
-    model.writer_val = SummaryWriter(model.path_exp + '/tensorboard_val')  # for tensorboardX
 
     model.pretrain_source = cfg.TRAINER.PRETRAIN_SOURCE
     model.clip_gradient = cfg.TRAINER.CLIP_GRADIENT
@@ -106,7 +102,7 @@ def initialise_trainer(cfg):
 
     #=== initialize the model ===#
     log_info('preparing the model......')
-    model = VideoModel(num_class, cfg.DATASET.BASELINE_TYPE, cfg.DATASET.FRAME_AGGREGATION, cfg.DATASET.MODALITY,
+    model = TA3NTrainer(num_class, cfg.DATASET.BASELINE_TYPE, cfg.DATASET.FRAME_AGGREGATION, cfg.DATASET.MODALITY,
             train_segments=cfg.DATASET.NUM_SEGMENTS, val_segments=cfg.DATASET.NUM_SEGMENTS, 
             base_model=cfg.MODEL.ARCH, path_pretrained=cfg.TRAINER.PRETRAINED,
             add_fc=cfg.MODEL.ADD_FC, fc_dim = cfg.MODEL.FC_DIM,
@@ -178,7 +174,7 @@ def initialise_tester(cfg):
         num_class.append(int(num))
 
         
-    verb_net = VideoModel(num_class, cfg.DATASET.BASELINE_TYPE, cfg.DATASET.FRAME_AGGREGATION, cfg.DATASET.MODALITY,
+    verb_net = TA3NTrainer(num_class, cfg.DATASET.BASELINE_TYPE, cfg.DATASET.FRAME_AGGREGATION, cfg.DATASET.MODALITY,
         train_segments=cfg.TESTER.TEST_SEGMENTS if cfg.DATASET.BASELINE_TYPE == 'video' else 1, val_segments=cfg.TESTER.TEST_SEGMENTS if cfg.DATASET.BASELINE_TYPE == 'video' else 1,
         base_model=cfg.MODEL.ARCH, add_fc=cfg.MODEL.ADD_FC, fc_dim=cfg.MODEL.FC_DIM, share_params=cfg.MODEL.SHARE_PARAMS,
         dropout_i=cfg.MODEL.DROPOUT_I, dropout_v=cfg.MODEL.DROPOUT_V, use_bn=cfg.MODEL.USE_BN, partial_bn=False,
@@ -195,7 +191,7 @@ def initialise_tester(cfg):
     verb_net.eval()
 
     if cfg.TESTER.NOUN_WEIGHTS is not None:
-        noun_net = VideoModel(num_class, cfg.DATASET.BASELINE_TYPE, cfg.DATASET.FRAME_AGGREGATION, cfg.DATASET.MODALITY,
+        noun_net = TA3NTrainer(num_class, cfg.DATASET.BASELINE_TYPE, cfg.DATASET.FRAME_AGGREGATION, cfg.DATASET.MODALITY,
                         train_segments=cfg.TESTER.TEST_SEGMENTS if cfg.DATASET.BASELINE_TYPE == 'video' else 1,
                         val_segments=cfg.TESTER.TEST_SEGMENTS if cfg.DATASET.BASELINE_TYPE == 'video' else 1,
                         base_model=cfg.MODEL.ARCH, add_fc=cfg.MODEL.ADD_FC, fc_dim=cfg.MODEL.FC_DIM, share_params=cfg.MODEL.SHARE_PARAMS,

@@ -47,10 +47,6 @@ def main():
 
 	log_info('Initialising model......')
 	model = initialise_trainer(cfg)
-
-	#========== log files init ========#
-
-	open_log_files(cfg)
 	
 	#========== Data loading ========#
 	
@@ -102,11 +98,6 @@ def main():
 	end_train = time.time()
 
 	#========== Logging ========#
-
-	write_log_files('total time: {:.3f} '.format(end_train - start_train), model.best_prec1)
-	model.writer_train.close()
-	model.writer_val.close()
-	
 	log_info('Training complete')
 	log_info('Total training time:' + str(end_train - start_train))
 	

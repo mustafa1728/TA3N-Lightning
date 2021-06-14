@@ -11,10 +11,6 @@ import torchvision
 
 import pytorch_lightning as pl
 
-from colorama import init
-from colorama import Fore, Back, Style
-
-from tensorboardX import SummaryWriter
 from torch.nn.utils import clip_grad_norm_
 
 from utils.logging import *
@@ -22,8 +18,6 @@ from utils.loss import *
 
 torch.manual_seed(1)
 torch.cuda.manual_seed_all(1)
-
-init(autoreset=True)
 
 class TRNRelationModule(pl.LightningModule):
     # this is the naive implementation of the n-frame relation module, as num_frames == num_frames_relation
@@ -147,7 +141,7 @@ class TCL(pl.LightningModule):
 
 		return x
 
-class VideoModel(pl.LightningModule):
+class TA3NTrainer(pl.LightningModule):
 	def __init__(self, num_class, baseline_type, frame_aggregation, modality,
 				train_segments=5, val_segments=25,
 				base_model='resnet101', path_pretrained='', new_length=None,
@@ -158,7 +152,7 @@ class VideoModel(pl.LightningModule):
 				use_attn='TransAttn', n_attn=1, use_attn_frame=None,
 				share_params='Y'):
 		super().__init__()
-		super(VideoModel, self).__init__()
+		super(TA3NTrainer, self).__init__()
 		self.num_class = num_class
 		self.modality = modality
 		self.train_segments = train_segments
@@ -228,16 +222,12 @@ class VideoModel(pl.LightningModule):
 		self.end_val = time.time()
 
 		#======= For lightning to use custom optimizer ======#
-		self.automatic_optimization  = False
+		self.automatic_optimization  = True
 
 		self.tensorboard = True
 
 	def _prepare_DA(self, num_class, base_model, modality): # convert the model to DA framework
-		if base_model == 'c3d': # C3D mode: in construction...
-			from C3D_model import C3D
-			model_test = C3D()
-			self.feature_dim = model_test.fc7.in_features
-		elif base_model == "TBN" and modality=="ALL":
+		if base_model == "TBN" and modality=="ALL":
 			self.feature_dim = 3072
 		elif base_model == "TBN":
 			self.feature_dim = 1024
@@ -255,7 +245,7 @@ class VideoModel(pl.LightningModule):
 
 		#------ frame-level layers (shared layers + source layers + domain layers) ------#
 		if self.add_fc < 1:
-			raise ValueError(Back.RED + 'add at least one fc layer')
+			raise ValueError('add at least one fc layer')
 
 		# 1. shared feature layers
 		self.fc_feature_shared_source = nn.Linear(self.feature_dim, feat_shared_dim)
@@ -471,7 +461,7 @@ class VideoModel(pl.LightningModule):
 		Override the default train() to freeze the BN parameters
 		:return:
 		"""
-		super(VideoModel, self).train(mode)
+		super(TA3NTrainer, self).train(mode)
 		count = 0
 		if self._enable_pbn:
 			log_debug("Freezing BatchNorm2D except the first one.")
@@ -682,7 +672,7 @@ class VideoModel(pl.LightningModule):
 
 		return input_source_bn, input_target_bn
 
-	def forward(self, input_source, input_target, beta, mu, is_train, reverse):
+	def forward(self, input_source, input_target, is_train=True, reverse=True):
 		batch_source = input_source.size()[0]
 		batch_target = input_target.size()[0]
 		num_segments = self.train_segments if is_train else self.val_segments
@@ -700,7 +690,7 @@ class VideoModel(pl.LightningModule):
 		#=== shared layers ===#
 		# need to separate BN for source & target ==> otherwise easy to overfit to source data
 		if self.add_fc < 1:
-			raise ValueError(Back.RED + 'not enough fc layer')
+			raise ValueError( 'not enough fc layer')
 
 		feat_fc_source = self.fc_feature_shared_source(feat_base_source)
 		feat_fc_target = self.fc_feature_shared_target(feat_base_target) if self.share_params == 'N' else self.fc_feature_shared_source(feat_base_target)
@@ -743,8 +733,8 @@ class VideoModel(pl.LightningModule):
 			feat_all_target.append(feat_fc_target.view((batch_target, num_segments) + feat_fc_target.size()[-1:]))
 
 		# === adversarial branch (frame-level) ===#
-		pred_fc_domain_frame_source = self.domain_classifier_frame(feat_fc_source, beta)
-		pred_fc_domain_frame_target = self.domain_classifier_frame(feat_fc_target, beta)
+		pred_fc_domain_frame_source = self.domain_classifier_frame(feat_fc_source, self.beta)
+		pred_fc_domain_frame_target = self.domain_classifier_frame(feat_fc_target, self.beta)
 
 		pred_domain_all_source.append(pred_fc_domain_frame_source.view((batch_source, num_segments) + pred_fc_domain_frame_source.size()[-1:]))
 		pred_domain_all_target.append(pred_fc_domain_frame_target.view((batch_target, num_segments) + pred_fc_domain_frame_target.size()[-1:]))
@@ -778,8 +768,8 @@ class VideoModel(pl.LightningModule):
 			feat_fc_video_relation_target = self.TRN(feat_fc_video_target)
 
 			# adversarial branch
-			pred_fc_domain_video_relation_source = self.domain_classifier_relation(feat_fc_video_relation_source, beta)
-			pred_fc_domain_video_relation_target = self.domain_classifier_relation(feat_fc_video_relation_target, beta)
+			pred_fc_domain_video_relation_source = self.domain_classifier_relation(feat_fc_video_relation_source, self.beta)
+			pred_fc_domain_video_relation_target = self.domain_classifier_relation(feat_fc_video_relation_target, self.beta)
 
 			# transferable attention
 			if self.use_attn is not None: # get the attention weighting
@@ -822,8 +812,8 @@ class VideoModel(pl.LightningModule):
 		feat_fc_video_target = self.dropout_v(feat_fc_video_target)
 
 		if reverse:
-			feat_fc_video_source = GradReverse.apply(feat_fc_video_source, mu)
-			feat_fc_video_target = GradReverse.apply(feat_fc_video_target, mu)
+			feat_fc_video_source = GradReverse.apply(feat_fc_video_source, self.mu)
+			feat_fc_video_target = GradReverse.apply(feat_fc_video_target, self.mu)
 
 		pred_fc_video_source = (self.fc_classifier_video_verb_source(feat_fc_video_source), self.fc_classifier_video_noun_source(feat_fc_video_source))
 		pred_fc_video_target = (self.fc_classifier_video_verb_target(feat_fc_video_target) if self.share_params == 'N' else self.fc_classifier_video_verb_source(feat_fc_video_target),
@@ -836,8 +826,8 @@ class VideoModel(pl.LightningModule):
 			feat_all_target.append(pred_fc_video_target[1].view((batch_target,) + pred_fc_video_target[1].size()[-1:]))
 
 		#=== adversarial branch (video-level) ===#
-		pred_fc_domain_video_source = self.domain_classifier_video(feat_fc_video_source, beta)
-		pred_fc_domain_video_target = self.domain_classifier_video(feat_fc_video_target, beta)
+		pred_fc_domain_video_source = self.domain_classifier_video(feat_fc_video_source, self.beta)
+		pred_fc_domain_video_target = self.domain_classifier_video(feat_fc_video_target, self.beta)
 
 		pred_domain_all_source.append(pred_fc_domain_video_source.view((batch_source,) + pred_fc_domain_video_source.size()[-1:]))
 		pred_domain_all_target.append(pred_fc_domain_video_target.view((batch_target,) + pred_fc_domain_video_target.size()[-1:]))
@@ -928,7 +918,7 @@ class VideoModel(pl.LightningModule):
 			self.lamb_da = self._init_lambda * self._grow_fact
 
 	def compute_loss(self, batch, split_name = "V"):
-		((source_data, source_label, source_id), (target_data, target_label, target_id)) = train_batch	
+		((source_data, source_label, _), (target_data, target_label, _)) = batch	
 
 		source_size_ori = source_data.size()  # original shape
 		target_size_ori = target_data.size()  # original shape
@@ -964,7 +954,7 @@ class VideoModel(pl.LightningModule):
 		label_target_noun = target_label_noun_frame if self.baseline_type == 'frame' else target_label_noun
 
 
-		attn_source, out_source, out_source_2, pred_domain_source, feat_source, attn_target, out_target, out_target_2, pred_domain_target, feat_target = self(source_data, target_data, self.beta, self.mu, is_train=True, reverse=False)
+		attn_source, out_source, out_source_2, pred_domain_source, feat_source, attn_target, out_target, out_target_2, pred_domain_target, feat_target = self(source_data, target_data, is_train=True, reverse=False)
 
 		attn_source, out_source, out_source_2, pred_domain_source, feat_source = removeDummy(attn_source, out_source, out_source_2, pred_domain_source, feat_source, batch_source_ori)
 		attn_target, out_target, out_target_2, pred_domain_target, feat_target = removeDummy(attn_target, out_target, out_target_2, pred_domain_target, feat_target, batch_target_ori)
@@ -1113,17 +1103,6 @@ class VideoModel(pl.LightningModule):
 		prec1_noun, prec5_noun = self.accuracy(pred_noun.data, label_noun, topk=(1, 5))
 		prec1_action, prec5_action = self.multitask_accuracy((pred_verb.data, pred_noun.data), (label_verb, label_noun), topk=(1, 5))
 
-		# compute gradient and do SGD step
-		self.optimizers().zero_grad()
-
-		loss.backward()
-
-		if self.clip_gradient is not None:
-			total_norm = clip_grad_norm_(self.parameters(), self.clip_gradient)
-			if total_norm > self.clip_gradient and self.verbose:
-				log_debug("clipping gradient: {} with coef {}".format(total_norm, self.clip_gradient / total_norm))
-
-		self.optimizers().step()
 
 		# measure elapsed time
 		batch_time  = time.time() - self.end
@@ -1377,9 +1356,6 @@ class VideoModel(pl.LightningModule):
 				# val_short_file.write('%.3f\n' % prec1)
 
 			self.best_prec1 = max(prec1, self.best_prec1)
-
-			if self.tensorboard:
-				self.writer_val.add_text('Best_Accuracy', str(self.best_prec1), self.current_epoch)
 
 	def test_step(self, batch, batch_idx):
 		"""
