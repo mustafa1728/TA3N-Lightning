@@ -1,55 +1,36 @@
-# EPIC-KITCHENS-100 UDA Challenge Source Code
-This repository contains the code used to produce the baseline results (TA3N) for the EPIC-KITCHENS-100 UDA Challenge. 
+# TA3N-Lightning
+This repository contains a PyTorch-Lightning inplementation of baseline Action Domain Adaptation Model TA3N. 
+
+The code has been modified from this [repository](https://github.com/jonmun/EPIC-KITCHENS-100_UDA_TA3N), and the original TA3N code can be found [here](https://github.com/cmhungsteve/TA3N), along with its [ICCV publication](http://openaccess.thecvf.com/content_ICCV_2019/html/Chen_Temporal_Attentive_Alignment_for_Large-Scale_Video_Domain_Adaptation_ICCV_2019_paper.html).
+
+# Original TA3N
+Although various image-based domain adaptation (DA) techniques have been proposed in recent years, domain shift in videos is still not well-explored. Most works only evaluate performance on small-scale datasets which are saturated.
+
+<p align="center">
+  <img src="images/model_arch.png" height="500"/>
+  <img src="images/overview.png" height="500"/>
+</p>
 
 
+The TA3N model chieved state-of-the-art performance of four large video DA datasets and is widely used as a baseline in many other works. Temporal Attentive Adversarial Adaptation Network (TA3N) explicitly attends to the temporal dynamics using domain discrepancy for more effective domain alignment, achieving state-of-the-art performance on four video DA datasets.
 
+<p align="center">
+  <img src="images/STOA_small.png" height="400"/>
+  <img src="images/STOA_large.png" height="400"/>
+</p>
 
 # Lightning Implementation 
 
-Notebook added to show demo and verify working correctly:
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1ZDiqTHjjaREiA9eCOJSlSARR2Dpbuqno#offline=true&sandboxMode=false)
+PyTorch Lightning is a popular deep learning framework providing a high-level interface for PyTorch, with an elegant, lightweight, hardware-agnostic design. It helps researchers to “decouple the research from the engineering” in their code, improving both reproducibility and flexibility and greatly reducing the engineering boilerplate.
+
+In this repository, the TA3N code is modified and implemented in Pytorch-Lightning. 
 
 ### Instructions to run:
 
-Make necessary modifications to hyperparameter in configs folder, and then run using its path as a command line argument.
+You can follow detailed instructions in the Google colaboratory notebook here:
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1ZDiqTHjjaREiA9eCOJSlSARR2Dpbuqno#offline=true&sandboxMode=false)
 
-To test default configs, run:
-~~~
-python3 main.py --cfg configs/train_epic_RGB.yaml
-python3 test.py --cfg configs/test_epic_RGB.yaml --ckpt <model.pth.tar>
-~~~
-
-
-# UDA Challenge Original Code
-
-Some modifications have been made to the original TA3N code base to produce results on EPIC-KITCHENS-100 including:
-1. Multiple classification heads to produce predictions for verb and nouns.
-2. Modified dataloader to load EPIC-KITCHENS-100 pre-extracted features.
-3. Modified training scripts to run the EPIC-KITCHENS-100 UDA baselines based. These have been modified from`script_train_val.sh` in the original repository.
-
-The original TA3N [code](https://github.com/cmhungsteve/TA3N) and [ICCV publication](http://openaccess.thecvf.com/content_ICCV_2019/html/Chen_Temporal_Attentive_Alignment_for_Large-Scale_Video_Domain_Adaptation_ICCV_2019_paper.html) can be found in the provided hyperlinks.
-
----
-## Usage
-We provide modified training scripts for TA3N to replicate EPIC-100 UDA Challenge results.
-
-1. Install dependecies 
-    * `conda env create -f environment.yml`
-   
-2. Download annotations and features.
-    * Annotations should be downloaded to the folder `./annotations` and extracted features to `./data`.
-         * Features: https://www.dropbox.com/sh/hsf8assfb9pzjos/AABqlWHx3YQATJZ_Gqnnhsj1a?dl=0
-         * Annotations: https://github.com/epic-kitchens/epic-kitchens-100-annotations/tree/master/UDA_annotations
-    * Alteratively variables in the bash scripts (`path_labels_root="annotations"`, `path_data_root="data`) can be modified to match the location of the labels/features on your machine.
-
-
-3. Replicate results with the provided bash scripts:
-    * `./script_test_ta3n.sh` to re-produce TA3N domain adaptation results
-    * `./script_test_source_only.sh` to re-produce source-only results
-
-3. Each script will generate a submission script`test.json` which can be uploaded to the UDA Codalab challenge to replicate the results. To re-train models, set `train=true` in the bash scripts.
-
-For futher details please see original source code for Temporal Attentive Alignment: https://github.com/cmhungsteve/TA3N
+It also has instructions on how to get the dataset used by the challenge.
 
 ---
 ## Acknowledgements
