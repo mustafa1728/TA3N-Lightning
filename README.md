@@ -7,17 +7,19 @@ The code has been modified from this [repository](https://github.com/jonmun/EPIC
 Although various image-based domain adaptation (DA) techniques have been proposed in recent years, domain shift in videos is still not well-explored. Most works only evaluate performance on small-scale datasets which are saturated.
 
 <p align="center">
-  <img src="images/model_arch.png" height="500"/>
-  <img src="images/overview.png" height="500"/>
+  <img src="images/overview.png" height="300"/>
+  <img src="images/model_arch.png" height="300"/>
 </p>
 
 
 The TA3N model chieved state-of-the-art performance of four large video DA datasets and is widely used as a baseline in many other works. Temporal Attentive Adversarial Adaptation Network (TA3N) explicitly attends to the temporal dynamics using domain discrepancy for more effective domain alignment, achieving state-of-the-art performance on four video DA datasets.
 
 <p align="center">
-  <img src="images/STOA_small.png" height="400"/>
-  <img src="images/STOA_large.png" height="400"/>
+  <img src="images/SOTA_small.png" height="250"/>
+  <img src="images/SOTA_large.png" height="250"/>
 </p>
+
+For a more detailed explaination of the model, refer to its  [ICCV publication](http://openaccess.thecvf.com/content_ICCV_2019/html/Chen_Temporal_Attentive_Alignment_for_Large-Scale_Video_Domain_Adaptation_ICCV_2019_paper.html).
 
 # Lightning Implementation 
 
