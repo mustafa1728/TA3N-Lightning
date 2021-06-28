@@ -14,7 +14,7 @@ from tensorboardX import SummaryWriter
 from utils.loss import *
 from utils.model_init import initialise_trainer
 from config import get_cfg_defaults
-from utils.data_loaders import get_train_data_loaders, get_val_data_loaders
+from utils.data_loaders import get_train_data_loaders, get_val_data_loaders, get_test_data_loaders
 from utils.logging import *
 
 
@@ -96,6 +96,10 @@ def main():
 		trainer.fit(model, (source_loader, target_loader))
 	
 	end_train = time.time()
+
+	target_loader_test = get_test_data_loaders(cfg)
+	log_info("Target Results: ")
+	trainer.test(test_dataloaders=target_loader_test, verbose = cfg.TESTER.VERBOSE)
 
 	#========== Logging ========#
 	log_info('Training complete')

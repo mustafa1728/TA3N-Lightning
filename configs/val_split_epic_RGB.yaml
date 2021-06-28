@@ -1,0 +1,15 @@
+TO_VALIDATE: False
+PATHS:
+  PATH_DATA_ROOT: "data/"
+  PATH_LABELS_ROOT: "annotations/"
+  PATH_DATA_SOURCE: "data/source_val"
+  PATH_DATA_TARGET: "data/target_val"
+DATASET:
+  DATASET: "epic"
+  MODALITY: "RGB"
+TRAINER:
+  MIN_EPOCHS: 29
+  MAX_EPOCHS: 30
+  ACCELERATOR: 'ddp'
+TESTER:
+  TEST_TARGET_DATA: "data/target_val"

@@ -170,6 +170,7 @@ class TA3NTrainer(pl.LightningModule):
 		self.fc_dim = fc_dim
 		self.share_params = share_params
 		self.verbose = verbose
+		self.epochs = 30
 
 		# RNN
 		self.n_layers = n_rnn
@@ -224,7 +225,7 @@ class TA3NTrainer(pl.LightningModule):
 		#======= For lightning to use custom optimizer ======#
 		self.automatic_optimization  = True
 
-		self.tensorboard = True
+		self.tensorboard = False
 
 	def _prepare_DA(self, num_class, base_model, modality): # convert the model to DA framework
 		if base_model == "TBN" and modality=="ALL":
@@ -889,16 +890,17 @@ class TA3NTrainer(pl.LightningModule):
 		"""
 		return {
 			"alpha": self.alpha,
-			"beta": self.beta,
+			"beta": self.beta[0],
 			"mu": self.mu,
 			"last_epoch": self.current_epoch,
 		}
 
 	def _update_batch_epoch_factors(self, batch_id):
+		self._init_epochs = 0
 		if self.current_epoch >= self._init_epochs:
 			delta_epoch = self.current_epoch - self._init_epochs
-			p = (batch_id + delta_epoch * self._nb_training_batches) / (
-				self._non_init_epochs * self._nb_training_batches
+			p = (batch_id + delta_epoch * self.batch_size[0]) / (
+				self.epochs * self.batch_size[0]
 			)
 			beta_dann = 2. / (1. + np.exp(-1.0 * p)) - 1
 			self._grow_fact = 2.0 / (1.0 + np.exp(-10 * p)) - 1
@@ -914,6 +916,8 @@ class TA3NTrainer(pl.LightningModule):
 				for param_group in self.optimizers().param_groups:
 					param_group['lr'] /= p 
 
+		self._adapt_lambda = False
+		self.lamb_da = 1
 		if self._adapt_lambda:
 			self.lamb_da = self._init_lambda * self._grow_fact
 
@@ -1102,7 +1106,7 @@ class TA3NTrainer(pl.LightningModule):
 		pred_noun = out_noun
 		prec1_noun, prec5_noun = self.accuracy(pred_noun.data, label_noun, topk=(1, 5))
 		prec1_action, prec5_action = self.multitask_accuracy((pred_verb.data, pred_noun.data), (label_verb, label_noun), topk=(1, 5))
-
+		prec1_action, prec5_action = torch.tensor(prec1_action), torch.tensor(prec5_action)
 
 		# measure elapsed time
 		batch_time  = time.time() - self.end
@@ -1116,7 +1120,7 @@ class TA3NTrainer(pl.LightningModule):
 
 		#======= return log_metrics ======#
 
-		log_metrics = {'Loss Total': loss.item(), 'Prec@1 Verb': prec1_verb.item(), 'Prec@5 Verb': prec5_verb.item(), 'Prec@1 Noun': prec1_noun.item(), 'Prec@5 Noun': prec5_noun.item(), 'Prec@1 Action': prec1_action, 'Prec@5 Action': prec5_action}
+		log_metrics = {'Loss Total': loss, 'Prec@1 Verb': prec1_verb, 'Prec@5 Verb': prec5_verb, 'Prec@1 Noun': prec1_noun, 'Prec@5 Noun': prec5_noun, 'Prec@1 Action': prec1_action, 'Prec@5 Action': prec5_action}
 
 
 		return loss_classification, loss_adversarial, log_metrics
@@ -1133,7 +1137,7 @@ class TA3NTrainer(pl.LightningModule):
 		Returns:
 			The loss(es) caluclated after performing an optimiser step
 		"""
-		self._update_batch_epoch_factors(train_batch, batch_idx)
+		self._update_batch_epoch_factors(batch_idx)
 
 		task_loss, adv_loss, log_metrics = self.compute_loss(train_batch, split_name="T")
 		if self.current_epoch < self._init_epochs:
@@ -1245,7 +1249,7 @@ class TA3NTrainer(pl.LightningModule):
 				val_label_noun_frame = val_label_noun.unsqueeze(1).repeat(1, self.val_segments).view(-1)  # expand the size for all the frames
 
 			# compute output
-			_, _, _, _, _, attn_val, out_val, out_val_2, pred_domain_val, feat_val = self(val_data, val_data, [0]*len(self.beta), 0, is_train=False, reverse=False)
+			_, _, _, _, _, attn_val, out_val, out_val_2, pred_domain_val, feat_val = self(val_data, val_data, is_train=False, reverse=False)
 
 			# ignore dummy tensors
 			attn_val, out_val, out_val_2, pred_domain_val, feat_val = removeDummy(attn_val, out_val, out_val_2, pred_domain_val, feat_val, batch_val_ori)
@@ -1255,10 +1259,10 @@ class TA3NTrainer(pl.LightningModule):
 			label_noun = val_label_noun_frame if self.baseline_type == 'frame' else val_label_noun
 
 			# store the embedding
-			if self.tensorboard:
-				self.feat_val_display = feat_val[1] if self.current_epoch == 0 else torch.cat((self.feat_val_display, feat_val[1]), 0)
-				self.label_val_verb_display = label_verb if self.current_epoch == 0 else torch.cat((self.label_val_verb_display, label_verb), 0)
-				self.label_val_noun_display = label_noun if self.current_epoch == 0 else torch.cat((self.label_val_noun_display, label_noun), 0)
+			# if self.tensorboard:
+			# 	self.feat_val_display = feat_val[1] if self.current_epoch == 0 else torch.cat((self.feat_val_display, feat_val[1]), 0)
+			# 	self.label_val_verb_display = label_verb if self.current_epoch == 0 else torch.cat((self.label_val_verb_display, label_verb), 0)
+			# 	self.label_val_noun_display = label_noun if self.current_epoch == 0 else torch.cat((self.label_val_noun_display, label_noun), 0)
 
 			pred_verb = out_val[0]
 			pred_noun = out_val[1]
