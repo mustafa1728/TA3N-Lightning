@@ -1023,8 +1023,6 @@ class TA3NTrainer(pl.LightningModule):
 							loss_discrepancy += loss_mmd
 						else:
 							raise NameError('not in dis_DA!!!')
-
-			self.alpha = self.alpha.type_as(loss_discrepancy)
 			loss += self.alpha * loss_discrepancy
 
 		# (II) adversarial discriminative model: adversarial loss
