@@ -374,15 +374,7 @@ class TA3NTrainer(pl.LightningModule):
 
 		feat_video_dim = feat_aggregated_dim
 
-		# 1. source feature layers (video-level)
-		self.fc_feature_video_source = nn.Linear(feat_aggregated_dim, feat_video_dim)
-		normal_(self.fc_feature_video_source.weight, 0, std)
-		constant_(self.fc_feature_video_source.bias, 0)
-
-		self.fc_feature_video_source_2 = nn.Linear(feat_video_dim, feat_video_dim)
-		normal_(self.fc_feature_video_source_2.weight, 0, std)
-		constant_(self.fc_feature_video_source_2.bias, 0)
-
+	
 		# 2. domain feature layers (video-level)
 		self.fc_feature_domain_video = nn.Linear(feat_aggregated_dim, feat_video_dim)
 		normal_(self.fc_feature_domain_video.weight, 0, std)
@@ -444,7 +436,6 @@ class TA3NTrainer(pl.LightningModule):
 		
 		if self.use_bn == 'AutoDIAL':
 			self.alpha = nn.Parameter(self.alpha)
-		self.alpha = self.alpha.type_as(self.fc_feature_video_source.weight)
 
 		# ------ attention mechanism ------#
 		# conventional attention
@@ -1033,6 +1024,7 @@ class TA3NTrainer(pl.LightningModule):
 						else:
 							raise NameError('not in dis_DA!!!')
 
+			self.alpha = self.alpha.type_as(loss_discrepancy)
 			loss += self.alpha * loss_discrepancy
 
 		# (II) adversarial discriminative model: adversarial loss
