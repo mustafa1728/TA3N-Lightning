@@ -171,6 +171,8 @@ class TA3NTrainer(pl.LightningModule):
 		self.share_params = share_params
 		self.verbose = verbose
 		self.epochs = 30
+		self.lamb_da = 1
+		self._init_lambda = 1
 
 		# RNN
 		self.n_layers = n_rnn
@@ -431,11 +433,6 @@ class TA3NTrainer(pl.LightningModule):
 			self.bn_source_video_T = nn.BatchNorm1d(feat_video_dim)
 			self.bn_source_video_2_S = nn.BatchNorm1d(feat_video_dim)
 			self.bn_source_video_2_T = nn.BatchNorm1d(feat_video_dim)
-
-		self.alpha = torch.ones(1)
-		
-		if self.use_bn == 'AutoDIAL':
-			self.alpha = nn.Parameter(self.alpha)
 
 		# ------ attention mechanism ------#
 		# conventional attention
@@ -907,8 +904,7 @@ class TA3NTrainer(pl.LightningModule):
 				for param_group in self.optimizers().param_groups:
 					param_group['lr'] /= p 
 
-		self._adapt_lambda = False
-		self.lamb_da = 1
+		self._adapt_lambda = True
 		if self._adapt_lambda:
 			self.lamb_da = self._init_lambda * self._grow_fact
 
@@ -1012,17 +1008,17 @@ class TA3NTrainer(pl.LightningModule):
 						feat_source_sel = feat_source_sel.view((-1,size_batch) + feat_source_sel.size()[1:])
 						feat_target_sel = feat_target_sel.view((-1,size_batch) + feat_target_sel.size()[1:])
 
-						if self.dis_DA == 'CORAL':
-							losses_coral = [CORAL(feat_source_sel[t], feat_target_sel[t]) for t in range(feat_source_sel.size(0))]
-							loss_coral = sum(losses_coral)/len(losses_coral)
-							loss_discrepancy += loss_coral
-						elif self.dis_DA == 'DAN':
-							losses_mmd = [mmd_rbf(feat_source_sel[t], feat_target_sel[t], kernel_mul=kernel_muls[l], kernel_num=kernel_nums[l], fix_sigma=fix_sigma_list[l], ver=2) for t in range(feat_source_sel.size(0))]
-							loss_mmd = sum(losses_mmd) / len(losses_mmd)
+						# if self.dis_DA == 'CORAL':
+						# 	losses_coral = [CORAL(feat_source_sel[t], feat_target_sel[t]) for t in range(feat_source_sel.size(0))]
+						# 	loss_coral = sum(losses_coral)/len(losses_coral)
+						# 	loss_discrepancy += loss_coral
+						# elif self.dis_DA == 'DAN':
+						# 	losses_mmd = [mmd_rbf(feat_source_sel[t], feat_target_sel[t], kernel_mul=kernel_muls[l], kernel_num=kernel_nums[l], fix_sigma=fix_sigma_list[l], ver=2) for t in range(feat_source_sel.size(0))]
+						# 	loss_mmd = sum(losses_mmd) / len(losses_mmd)
 
-							loss_discrepancy += loss_mmd
-						else:
-							raise NameError('not in dis_DA!!!')
+						# 	loss_discrepancy += loss_mmd
+						# else:
+						# 	raise NameError('not in dis_DA!!!')
 			loss += self.alpha * loss_discrepancy
 
 		# (II) adversarial discriminative model: adversarial loss
@@ -1136,7 +1132,7 @@ class TA3NTrainer(pl.LightningModule):
 			loss = task_loss
 		else:
 			loss = task_loss + self.lamb_da * adv_loss
-
+		loss = log_metrics['Loss Total']
 		log_metrics = get_aggregated_metrics_from_dict(log_metrics)
 		log_metrics.update(get_metrics_from_parameter_dict(self.get_parameters_watch_list(), loss.device))
 		log_metrics["T_total_loss"] = loss
