@@ -141,6 +141,19 @@ class TCL(pl.LightningModule):
 
 		return x
 
+import logging
+
+logging.basicConfig(filename="test_model.txt",
+                    filemode='a',
+                    format='%(levelname)-6s | %(message)s',
+                    datefmt='%H:%M:%S',
+                    level=logging.DEBUG)
+def log_output(name, x):
+	try:
+		logging.debug(str(name) + "mean: {} | std: {} | size: {}".format(torch.mean(x), torch.std(x), x.size()))
+	except Exception as e:
+		logging.error(e)
+
 class TA3NTrainer(pl.LightningModule):
 	def __init__(self, num_class, baseline_type, frame_aggregation, modality,
 				train_segments=5, val_segments=25,
@@ -671,7 +684,8 @@ class TA3NTrainer(pl.LightningModule):
 		feat_all_target = []
 		pred_domain_all_source = []
 		pred_domain_all_target = []
-
+		log_output("input_source: ", input_source)
+		log_output("input_target: ", input_target)
 		# input_data is a list of tensors --> need to do pre-processing
 		feat_base_source = input_source.view(-1, input_source.size()[-1]) # e.g. 256 x 25 x 2048 --> 6400 x 2048
 		feat_base_target = input_target.view(-1, input_target.size()[-1])  # e.g. 256 x 25 x 2048 --> 6400 x 2048
@@ -683,15 +697,19 @@ class TA3NTrainer(pl.LightningModule):
 
 		feat_fc_source = self.fc_feature_shared_source(feat_base_source)
 		feat_fc_target = self.fc_feature_shared_target(feat_base_target) if self.share_params == 'N' else self.fc_feature_shared_source(feat_base_target)
-
+		log_output("feat_fc_source: ", feat_fc_source)
+		log_output("feat_fc_target: ", feat_fc_target)
 		# adaptive BN
 		if self.use_bn is not None:
-			feat_fc_source, feat_fc_target = self.domainAlign(feat_fc_source, feat_fc_target, is_train, 'shared', self.alpha, num_segments, 1)
+			alpha_temp = 1.0
+			feat_fc_source, feat_fc_target = self.domainAlign(feat_fc_source, feat_fc_target, is_train, 'shared', alpha_temp, num_segments, 1)
 
 		feat_fc_source = self.relu(feat_fc_source)
 		feat_fc_target = self.relu(feat_fc_target)
-		feat_fc_source = self.dropout_i(feat_fc_source)
-		feat_fc_target = self.dropout_i(feat_fc_target)
+		# feat_fc_source = self.dropout_i(feat_fc_source)
+		# feat_fc_target = self.dropout_i(feat_fc_target)
+		log_output("feat_fc_source: ", feat_fc_source)
+		log_output("feat_fc_target: ", feat_fc_target)
 
 		# feat_fc = self.dropout_i(feat_fc)
 		feat_all_source.append(feat_fc_source.view((batch_source, num_segments) + feat_fc_source.size()[-1:])) # reshape ==> 1st dim is the batch size
@@ -724,6 +742,8 @@ class TA3NTrainer(pl.LightningModule):
 		# === adversarial branch (frame-level) ===#
 		pred_fc_domain_frame_source = self.domain_classifier_frame(feat_fc_source, self.beta)
 		pred_fc_domain_frame_target = self.domain_classifier_frame(feat_fc_target, self.beta)
+		log_output("pred_fc_domain_frame_source: ", pred_fc_domain_frame_source)
+		log_output("pred_fc_domain_frame_target: ", pred_fc_domain_frame_target)
 
 		pred_domain_all_source.append(pred_fc_domain_frame_source.view((batch_source, num_segments) + pred_fc_domain_frame_source.size()[-1:]))
 		pred_domain_all_target.append(pred_fc_domain_frame_target.view((batch_target, num_segments) + pred_fc_domain_frame_target.size()[-1:]))
@@ -731,12 +751,17 @@ class TA3NTrainer(pl.LightningModule):
 		if self.use_attn_frame is not None: # attend the frame-level features only
 			feat_fc_source = self.get_attn_feat_frame(feat_fc_source, pred_fc_domain_frame_source)
 			feat_fc_target = self.get_attn_feat_frame(feat_fc_target, pred_fc_domain_frame_target)
+			log_output("feat_fc_source (after attention): ", feat_fc_source)
+			log_output("feat_fc_target (after attention): ", feat_fc_target)
 
 		#=== source layers (frame-level) ===#
 
 		pred_fc_source = (self.fc_classifier_source_verb(feat_fc_source), self.fc_classifier_source_noun(feat_fc_source))
 		pred_fc_target = (self.fc_classifier_target_verb(feat_fc_target) if self.share_params == 'N' else self.fc_classifier_source_verb(feat_fc_target),
 						  self.fc_classifier_target_noun(feat_fc_target) if self.share_params == 'N' else self.fc_classifier_source_noun(feat_fc_target))
+
+		log_output("pred_fc_source: ", pred_fc_source)
+		log_output("pred_fc_target: ", pred_fc_target)
 		if self.baseline_type == 'frame':
 			feat_all_source.append(pred_fc_source[0].view((batch_source, num_segments) + pred_fc_source[0].size()[-1:])) # reshape ==> 1st dim is the batch size
 			feat_all_target.append(pred_fc_target[0].view((batch_target, num_segments) + pred_fc_target[0].size()[-1:]))
@@ -755,10 +780,13 @@ class TA3NTrainer(pl.LightningModule):
 
 			feat_fc_video_relation_source = self.TRN(feat_fc_video_source) # 128x5x512 --> 128x5x256 (256-dim. relation feature vectors x 5)
 			feat_fc_video_relation_target = self.TRN(feat_fc_video_target)
-
+			log_output("feat_fc_video_relation_source: ", feat_fc_video_relation_source)
+			log_output("feat_fc_video_relation_target: ", feat_fc_video_relation_target)
 			# adversarial branch
 			pred_fc_domain_video_relation_source = self.domain_classifier_relation(feat_fc_video_relation_source, self.beta)
 			pred_fc_domain_video_relation_target = self.domain_classifier_relation(feat_fc_video_relation_target, self.beta)
+			log_output("pred_fc_domain_video_relation_source: ", pred_fc_domain_video_relation_source)
+			log_output("pred_fc_domain_video_relation_target: ", pred_fc_domain_video_relation_target)
 
 			# transferable attention
 			if self.use_attn is not None: # get the attention weighting
@@ -771,6 +799,8 @@ class TA3NTrainer(pl.LightningModule):
 			# sum up relation features (ignore 1-relation)
 			feat_fc_video_source = torch.sum(feat_fc_video_relation_source, 1)
 			feat_fc_video_target = torch.sum(feat_fc_video_relation_target, 1)
+			log_output("feat_fc_video_source: ", feat_fc_video_source)
+			log_output("feat_fc_video_target: ", feat_fc_video_target)
 
 		elif self.frame_aggregation == 'temconv': # DA operation inside temconv
 			feat_fc_video_source = feat_fc_source.view((-1, 1, num_segments) + feat_fc_source.size()[-1:])  # reshape based on the segments
@@ -799,14 +829,23 @@ class TA3NTrainer(pl.LightningModule):
 		#=== source layers (video-level) ===#
 		feat_fc_video_source = self.dropout_v(feat_fc_video_source)
 		feat_fc_video_target = self.dropout_v(feat_fc_video_target)
+		log_output("feat_fc_video_source: ", feat_fc_video_source)
+		log_output("feat_fc_video_target: ", feat_fc_video_target)
 
 		if reverse:
 			feat_fc_video_source = GradReverse.apply(feat_fc_video_source, self.mu)
 			feat_fc_video_target = GradReverse.apply(feat_fc_video_target, self.mu)
 
+		log_output("feat_fc_video_source: ", feat_fc_video_source)
+		log_output("feat_fc_video_target: ", feat_fc_video_target)
+
 		pred_fc_video_source = (self.fc_classifier_video_verb_source(feat_fc_video_source), self.fc_classifier_video_noun_source(feat_fc_video_source))
 		pred_fc_video_target = (self.fc_classifier_video_verb_target(feat_fc_video_target) if self.share_params == 'N' else self.fc_classifier_video_verb_source(feat_fc_video_target),
 									 self.fc_classifier_video_noun_target(feat_fc_video_target) if self.share_params == 'N' else self.fc_classifier_video_noun_source(feat_fc_video_target))
+
+
+		log_output("pred_fc_video_source: ", pred_fc_video_source)
+		log_output("pred_fc_video_target: ", pred_fc_video_target)
 
 		if self.baseline_type == 'video': # only store the prediction from classifier 1 (for now)
 			feat_all_source.append(pred_fc_video_source[0].view((batch_source,) + pred_fc_video_source[0].size()[-1:]))
@@ -817,9 +856,12 @@ class TA3NTrainer(pl.LightningModule):
 		#=== adversarial branch (video-level) ===#
 		pred_fc_domain_video_source = self.domain_classifier_video(feat_fc_video_source, self.beta)
 		pred_fc_domain_video_target = self.domain_classifier_video(feat_fc_video_target, self.beta)
+		log_output("pred_fc_domain_video_source: ", pred_fc_domain_video_source)
+		log_output("pred_fc_domain_video_target: ", pred_fc_domain_video_target)
 
 		pred_domain_all_source.append(pred_fc_domain_video_source.view((batch_source,) + pred_fc_domain_video_source.size()[-1:]))
 		pred_domain_all_target.append(pred_fc_domain_video_target.view((batch_target,) + pred_fc_domain_video_target.size()[-1:]))
+		
 
 		# video relation-based discriminator
 		if self.frame_aggregation == 'trn-m':
@@ -1108,6 +1150,13 @@ class TA3NTrainer(pl.LightningModule):
 
 		log_metrics = {'Loss Total': loss, 'Prec@1 Verb': prec1_verb, 'Prec@5 Verb': prec5_verb, 'Prec@1 Noun': prec1_noun, 'Prec@5 Noun': prec5_noun, 'Prec@1 Action': prec1_action, 'Prec@5 Action': prec5_action}
 
+		log_output("loss total: ", loss)
+		log_output("Prec@1 Verb: ", prec1_verb)
+		log_output("Prec@5 Verb: ", prec5_verb)
+		log_output("Prec@1 Noun: ", prec1_noun)
+		log_output("Prec@5 Noun: ", prec5_noun)
+		log_output("Prec@1 Action: ", prec1_action)
+		log_output("Prec@5 Action: ", prec5_action)
 
 		return loss_classification, loss_adversarial, log_metrics
 
