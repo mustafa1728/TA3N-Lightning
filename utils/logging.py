@@ -1,5 +1,6 @@
 import logging
 
+
 class CustomFormatter(logging.Formatter):
     """Logging Formatter to add colors and count warning / errors"""
 
@@ -10,8 +11,8 @@ class CustomFormatter(logging.Formatter):
     red = "\x1b[31;21m"
     bold_red = "\x1b[31;1m"
     reset = "\x1b[0m"
-    format='%(asctime)s | %(levelname)-6s: %(message)s'
-    datefmt='%d-%b-%y %H:%M:%S'
+    format = '%(asctime)s | %(levelname)-6s: %(message)s'
+    datefmt = '%d-%b-%y %H:%M:%S'
 
     FORMATS = {
         logging.DEBUG: grey + format + reset,
@@ -26,6 +27,7 @@ class CustomFormatter(logging.Formatter):
         formatter = logging.Formatter(log_fmt)
         return formatter.format(record)
 
+
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
@@ -37,14 +39,18 @@ ch.setFormatter(CustomFormatter())
 
 logger.addHandler(ch)
 
+
 def log_info(message):
     logger.info(message)
+
 
 def log_debug(message):
     logger.debug(message)
 
+
 def log_error(message):
     logger.error(message)
+
 
 def log_warning(message):
     logger.warning(message)
