@@ -18,12 +18,12 @@ _C.TO_VALIDATE = False  # choices = [True, False]
 # Paths
 # -----------------------------------------------------------------------------
 _C.PATHS = CN()
-_C.PATHS.PATH_DATA_ROOT = "I:/Datasets/EgoAction/EPIC-100/frames_rgb_flow/feature/"
-_C.PATHS.PATH_LABELS_ROOT = "I:/Datasets/EgoAction/EPIC-100/annotations/labels_train_test/val/"
+_C.PATHS.PATH_DATA_ROOT = "data/"  # directory where the feature pickles are stored. Depends on users
+_C.PATHS.PATH_LABELS_ROOT = "annotations/"  # directory where the annotations are stored. Depends on users
 _C.PATHS.PATH_EXP_ROOT = "model/action-model/"  # directory where the checkpoints are to be stored. Depends on users
 
-_C.PATHS.DATASET_SOURCE = "source_val"  # depends on users
-_C.PATHS.DATASET_TARGET = "target_val"  # depends on users
+_C.PATHS.DATASET_SOURCE = "source_train"  # depends on users
+_C.PATHS.DATASET_TARGET = "target_train"  # depends on users
 
 # training
 _C.PATHS.PATH_DATA_SOURCE = os.path.join(_C.PATHS.PATH_DATA_ROOT, _C.PATHS.DATASET_SOURCE)
@@ -37,15 +37,15 @@ _C.PATHS.TRAIN_TARGET_LIST = os.path.join(_C.PATHS.PATH_LABELS_ROOT,
 _C.PATHS.VAL_LIST = os.path.join(_C.PATHS.PATH_LABELS_ROOT, "EPIC_100_uda_target_test_timestamps.pkl")
 _C.PATHS.PATH_EXP = os.path.join(_C.PATHS.PATH_EXP_ROOT, "Testexp")
 
-# # validation
-# _C.PATHS.VAL_DATASET_SOURCE = "source_val"  # depends on users
-# _C.PATHS.VAL_DATASET_TARGET = "target_val"  # depends on users
-#
-# _C.PATHS.PATH_VAL_DATA_SOURCE = os.path.join(_C.PATHS.PATH_DATA_ROOT, _C.PATHS.VAL_DATASET_SOURCE)
-# _C.PATHS.PATH_VAL_DATA_TARGET = os.path.join(_C.PATHS.PATH_DATA_ROOT, _C.PATHS.VAL_DATASET_TARGET)
-#
-# _C.PATHS.VAL_SOURCE_LIST = os.path.join(_C.PATHS.PATH_LABELS_ROOT, "EPIC_100_uda_source_val.pkl")
-# _C.PATHS.VAL_TARGET_LIST = os.path.join(_C.PATHS.PATH_LABELS_ROOT, "EPIC_100_uda_target_val.pkl")
+# validation
+_C.PATHS.VAL_DATASET_SOURCE = "source_val"  # depends on users
+_C.PATHS.VAL_DATASET_TARGET = "target_val"  # depends on users
+
+_C.PATHS.PATH_VAL_DATA_SOURCE = os.path.join(_C.PATHS.PATH_DATA_ROOT, _C.PATHS.VAL_DATASET_SOURCE)
+_C.PATHS.PATH_VAL_DATA_TARGET = os.path.join(_C.PATHS.PATH_DATA_ROOT, _C.PATHS.VAL_DATASET_TARGET)
+
+_C.PATHS.VAL_SOURCE_LIST = os.path.join(_C.PATHS.PATH_LABELS_ROOT, "EPIC_100_uda_source_val.pkl")
+_C.PATHS.VAL_TARGET_LIST = os.path.join(_C.PATHS.PATH_LABELS_ROOT, "EPIC_100_uda_target_val.pkl")
 
 # -----------------------------------------------------------------------------
 # Dataset
