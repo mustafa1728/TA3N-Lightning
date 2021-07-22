@@ -1,6 +1,10 @@
 **/.DS_Store
-*.csv
-*.pkl
 __pycache__/
 */__pycache__/
 .idea
+lightning_logs
+
+*.csv
+*.pkl
+*.pth.tar
+*.ckpt
