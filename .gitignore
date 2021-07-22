@@ -8,3 +8,4 @@ lightning_logs
 *.pkl
 *.pth.tar
 *.ckpt
+*.txt
