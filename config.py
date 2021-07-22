@@ -34,7 +34,7 @@ _C.PATHS.TRAIN_SOURCE_LIST = os.path.join(_C.PATHS.PATH_LABELS_ROOT,
 _C.PATHS.TRAIN_TARGET_LIST = os.path.join(_C.PATHS.PATH_LABELS_ROOT,
                                           'EPIC_100_uda_target_train_timestamps.pkl')  # '/domain_adaptation_target_train_pre-release_v6.pkl'
 
-_C.PATHS.VAL_LIST = os.path.join(_C.PATHS.PATH_LABELS_ROOT, "EPIC_100_uda_target_test_timestamps.pkl")
+_C.PATHS.TEST_LIST = os.path.join(_C.PATHS.PATH_LABELS_ROOT, "EPIC_100_uda_target_test_timestamps.pkl")
 _C.PATHS.PATH_EXP = os.path.join(_C.PATHS.PATH_EXP_ROOT, "Testexp")
 
 # validation
