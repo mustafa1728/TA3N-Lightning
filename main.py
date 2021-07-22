@@ -3,14 +3,8 @@ import numpy as np
 import time
 import argparse
 
-# import torch
-# import torch.nn.parallel
-# import torch.optim
-
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
-# from tensorboardX import SummaryWriter
-
 from utils.loss import *
 from utils.model_init import initialise_trainer
 from config import get_cfg_defaults
@@ -29,7 +23,7 @@ def arg_parse():
     """Parsing arguments"""
     parser = argparse.ArgumentParser(description="TA3N Domain Adaptation")
     parser.add_argument("--cfg", required=True, help="path to config file", type=str)
-    parser.add_argument("--gpus", default="0", help="gpu id(s) to use", type=str)
+    parser.add_argument("--gpus", default=[0], help="gpu id(s) to use", type=list)
     parser.add_argument("--resume", default="", type=str)
     args = parser.parse_args()
     return args
@@ -55,6 +49,7 @@ def main():
 
     if cfg.TO_VALIDATE:
         log_info('Loading validation data......')
+        # source_loader_val, target_loader_val = get_val_data_loaders(cfg)
         source_loader_val, target_loader_val = get_val_data_loaders(cfg)
 
     # ========== Callbacks and checkpoints ========#
