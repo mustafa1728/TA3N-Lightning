@@ -37,15 +37,15 @@ _C.PATHS.TRAIN_TARGET_LIST = os.path.join(_C.PATHS.PATH_LABELS_ROOT,
 _C.PATHS.VAL_LIST = os.path.join(_C.PATHS.PATH_LABELS_ROOT, "EPIC_100_uda_target_test_timestamps.pkl")
 _C.PATHS.PATH_EXP = os.path.join(_C.PATHS.PATH_EXP_ROOT, "Testexp")
 
-# # validation
-# _C.PATHS.VAL_DATASET_SOURCE = "source_val"  # depends on users
-# _C.PATHS.VAL_DATASET_TARGET = "target_val"  # depends on users
-#
-# _C.PATHS.PATH_VAL_DATA_SOURCE = os.path.join(_C.PATHS.PATH_DATA_ROOT, _C.PATHS.VAL_DATASET_SOURCE)
-# _C.PATHS.PATH_VAL_DATA_TARGET = os.path.join(_C.PATHS.PATH_DATA_ROOT, _C.PATHS.VAL_DATASET_TARGET)
-#
-# _C.PATHS.VAL_SOURCE_LIST = os.path.join(_C.PATHS.PATH_LABELS_ROOT, "EPIC_100_uda_source_val.pkl")
-# _C.PATHS.VAL_TARGET_LIST = os.path.join(_C.PATHS.PATH_LABELS_ROOT, "EPIC_100_uda_target_val.pkl")
+# validation
+_C.PATHS.VAL_DATASET_SOURCE = "source_val"  # depends on users
+_C.PATHS.VAL_DATASET_TARGET = "target_val"  # depends on users
+
+_C.PATHS.PATH_VAL_DATA_SOURCE = os.path.join(_C.PATHS.PATH_DATA_ROOT, _C.PATHS.VAL_DATASET_SOURCE)
+_C.PATHS.PATH_VAL_DATA_TARGET = os.path.join(_C.PATHS.PATH_DATA_ROOT, _C.PATHS.VAL_DATASET_TARGET)
+
+_C.PATHS.VAL_SOURCE_LIST = os.path.join(_C.PATHS.PATH_LABELS_ROOT, "EPIC_100_uda_source_train.pkl")
+_C.PATHS.VAL_TARGET_LIST = os.path.join(_C.PATHS.PATH_LABELS_ROOT, "EPIC_100_uda_target_test_timestamps.pkl")
 
 # -----------------------------------------------------------------------------
 # Dataset
@@ -53,10 +53,10 @@ _C.PATHS.PATH_EXP = os.path.join(_C.PATHS.PATH_EXP_ROOT, "Testexp")
 _C.DATASET = CN()
 _C.DATASET.DATASET = "epic"  # dataset choices = [hmdb_ucf, hmdb_ucf_small, ucf_olympic]
 _C.DATASET.NUM_CLASSES = "97,300"
-_C.DATASET.NUM_SOURCE = 16115  # number of training data (source)
-_C.DATASET.NUM_TARGET = 26115  # number of training data (target)
+_C.DATASET.NUM_SOURCE = 5002  # number of training data (source)
+_C.DATASET.NUM_TARGET = 7906  # number of training data (target)
 
-_C.DATASET.MODALITY = "RGB"  # choices = [ALL, RGB, Audio, Flow]
+_C.DATASET.MODALITY = "ALL"  # choices = [ALL, RGB, Audio, Flow]
 _C.DATASET.FRAME_TYPE = "feature"  # choices = [frame]
 _C.DATASET.NUM_SEGMENTS = 5  # sample frame # of each video for training
 _C.DATASET.VAL_SEGMENTS = 5  # sample frame # of each video for training
@@ -86,7 +86,7 @@ if _C.MODEL.USE_TARGET == "none":
     _C.MODEL.EXP_DA_NAME = "baseline"
 else:
     _C.MODEL.EXP_DA_NAME = "DA"
-_C.MODEL.DIS_DA = "DAN"  # choices  = [DAN, CORAL, JAN]
+_C.MODEL.DIS_DA = None  # choices  = [DAN, CORAL, JAN]
 _C.MODEL.ADV_POS_0 = "Y"  # discriminator for relation features. choices  = [Y, N]
 _C.MODEL.ADV_DA = "RevGrad"  # choices  = [None]
 _C.MODEL.ADD_LOSS_DA = "attentive_entropy"  # choices  = [None, target_entropy, attentive_entropy]
@@ -139,7 +139,7 @@ _C.TRAINER.PRETRAINED = None
 _C.TRAINER.RESUME = ""
 _C.TRAINER.RESUME_HP = ""
 
-_C.TRAINER.MIN_EPOCHS = 25
+_C.TRAINER.MIN_EPOCHS = 20
 _C.TRAINER.MAX_EPOCHS = 30
 
 _C.TRAINER.ACCELERATOR = "ddp"
@@ -180,7 +180,7 @@ _C.MODEL.N_DIRECTIONS = 1
 _C.MODEL.N_TS = 5
 _C.MODEL.TENSORBOARD = True
 _C.MODEL.FLOW_PREFIX = ""
-_C.TRAINER.JOBS = 2
+_C.TRAINER.WORKERS = 0
 _C.TRAINER.EF = 1
 _C.TRAINER.PF = 50
 _C.TRAINER.SF = 50
