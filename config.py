@@ -157,7 +157,8 @@ _C.PATHS.EXP_PATH = os.path.join(
 # ---------------------------------------------------------------------------- #
 _C.TESTER = CN()
 
-_C.TESTER.TEST_TARGET_DATA = os.path.join(_C.PATHS.PATH_DATA_ROOT, "target_test")
+# _C.TESTER.TEST_TARGET_DATA = os.path.join(_C.PATHS.PATH_DATA_ROOT, "target_test")
+_C.TESTER.TEST_TARGET_DATA = os.path.join(_C.PATHS.PATH_DATA_ROOT, "target_val")
 
 _C.TESTER.WEIGHTS = os.path.join(_C.PATHS.EXP_PATH, "checkpoint.pth.tar")
 _C.TESTER.NOUN_WEIGHTS = None
