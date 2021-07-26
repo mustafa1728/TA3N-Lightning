@@ -148,7 +148,8 @@ def get_test_data_loaders(cfg):
                               test_mode=True, noun_data_path=cfg.TESTER.NOUN_TARGET_DATA + ".pkl"
                               )
     else:
-        data_set = TSNDataSet(cfg.TESTER.TEST_TARGET_DATA + ".pkl", cfg.PATHS.TEST_LIST, num_dataload=num_test,
+        data_set = TSNDataSet(test_target_data, test_target_list,
+                              num_dataload=num_test,
                               num_segments=cfg.TESTER.TEST_SEGMENTS,
                               new_length=data_length, modality=cfg.DATASET.MODALITY,
                               image_tmpl="img_{:05d}.t7" if cfg.DATASET.MODALITY in ['RGB', 'RGBDiff', 'RGBDiff2',
