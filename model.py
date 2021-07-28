@@ -197,9 +197,6 @@ class TA3NTrainer(pl.LightningModule):
 
         self.base_model = base_model
         self.verbose = verbose
-        self.epochs = 30
-        self.lamb_da = 1
-        self._init_lambda = 1
 
         # RNN
         self.n_layers = n_rnn
@@ -220,11 +217,11 @@ class TA3NTrainer(pl.LightningModule):
         if verbose:
             log_info(("""
                 Initializing TSN with base model: {}.
-				TSN Configurations:
-				input_modality:     {}
-				num_segments:       {}
-				new_length:         {}
-				""".format(self.base_model, self.modality, self.train_segments, self.new_length)))
+                TSN Configurations:
+                input_modality:     {}
+                num_segments:       {}
+                new_length:         {}
+                """.format(self.base_model, self.modality, self.train_segments, self.new_length)))
 
         self._prepare_DA(self.num_class, self.base_model, self.modality)
 
@@ -402,6 +399,7 @@ class TA3NTrainer(pl.LightningModule):
         feat_video_dim = feat_aggregated_dim
 
         # 1. source feature layers (video-level)
+        # TODO
         self.fc_feature_video_source = nn.Linear(feat_aggregated_dim, feat_video_dim)
         normal_(self.fc_feature_video_source.weight, 0, std)
         constant_(self.fc_feature_video_source.bias, 0)
@@ -468,6 +466,10 @@ class TA3NTrainer(pl.LightningModule):
             self.bn_source_video_2_S = nn.BatchNorm1d(feat_video_dim)
             self.bn_source_video_2_T = nn.BatchNorm1d(feat_video_dim)
 
+        self.alpha = torch.ones(1)
+        if self.use_bn == 'AutoDIAL':
+            self.alpha = nn.Parameter(self.alpha)
+
         # ------ attention mechanism ------#
         # conventional attention
         if self.use_attn == 'general':
@@ -479,10 +481,8 @@ class TA3NTrainer(pl.LightningModule):
 
     def train(self, mode=True):
         # not necessary in our setting
-        """
-		Override the default train() to freeze the BN parameters
-		:return:
-		"""
+        """Override the default train() to freeze the BN parameters"""
+
         super(TA3NTrainer, self).train(mode)
         count = 0
         if self._enable_pbn:
@@ -564,8 +564,7 @@ class TA3NTrainer(pl.LightningModule):
             feat_fc_video = feat_fc_video.squeeze(2)  # 16 x 3 x 1 x 512 --> 16 x 3 x 512
 
             hidden_temp = torch.zeros(self.n_layers * self.n_directions, feat_fc_video.size(0),
-                                      self.hidden_dim // self.n_directions)
-            hidden_temp = hidden_temp.type_as(feat_fc)
+                                      self.hidden_dim // self.n_directions).type_as(feat_fc)
 
             if self.rnn_cell == 'LSTM':
                 hidden_init = (hidden_temp, hidden_temp)
@@ -708,7 +707,7 @@ class TA3NTrainer(pl.LightningModule):
 
         return input_source_bn, input_target_bn
 
-    def forward(self, input_source, input_target, is_train=True, reverse=True):
+    def forward(self, input_source, input_target, beta, mu, is_train=True, reverse=True):
         batch_source = input_source.size()[0]
         batch_target = input_target.size()[0]
         num_segments = self.train_segments if is_train else self.val_segments
@@ -736,9 +735,8 @@ class TA3NTrainer(pl.LightningModule):
         log_output("feat_fc_target: ", feat_fc_target)
         # adaptive BN
         if self.use_bn is not None:
-            alpha_temp = 1.0
             feat_fc_source, feat_fc_target = self.domainAlign(feat_fc_source, feat_fc_target, is_train, 'shared',
-                                                              alpha_temp, num_segments, 1)
+                                                              self.alpha.item(), num_segments, 1)
 
         feat_fc_source = self.relu(feat_fc_source)
         feat_fc_target = self.relu(feat_fc_target)
@@ -781,8 +779,8 @@ class TA3NTrainer(pl.LightningModule):
             feat_all_target.append(feat_fc_target.view((batch_target, num_segments) + feat_fc_target.size()[-1:]))
 
         # === adversarial branch (frame-level) ===#
-        pred_fc_domain_frame_source = self.domain_classifier_frame(feat_fc_source, self.beta)
-        pred_fc_domain_frame_target = self.domain_classifier_frame(feat_fc_target, self.beta)
+        pred_fc_domain_frame_source = self.domain_classifier_frame(feat_fc_source, beta)
+        pred_fc_domain_frame_target = self.domain_classifier_frame(feat_fc_target, beta)
         log_output("pred_fc_domain_frame_source: ", pred_fc_domain_frame_source)
         log_output("pred_fc_domain_frame_target: ", pred_fc_domain_frame_target)
 
@@ -839,9 +837,9 @@ class TA3NTrainer(pl.LightningModule):
             log_output("feat_fc_video_relation_target: ", feat_fc_video_relation_target)
             # adversarial branch
             pred_fc_domain_video_relation_source = self.domain_classifier_relation(feat_fc_video_relation_source,
-                                                                                   self.beta)
+                                                                                   beta)
             pred_fc_domain_video_relation_target = self.domain_classifier_relation(feat_fc_video_relation_target,
-                                                                                   self.beta)
+                                                                                   beta)
             log_output("pred_fc_domain_video_relation_source: ", pred_fc_domain_video_relation_source)
             log_output("pred_fc_domain_video_relation_target: ", pred_fc_domain_video_relation_target)
 
@@ -876,7 +874,8 @@ class TA3NTrainer(pl.LightningModule):
             if self.use_bn is not None:
                 feat_fc_video_source_3_1, feat_fc_video_target_3_1 = self.domainAlign(feat_fc_video_source_3_1,
                                                                                       feat_fc_video_target_3_1,
-                                                                                      is_train, 'temconv_1', self.alpha,
+                                                                                      is_train, 'temconv_1',
+                                                                                      self.alpha.item(),
                                                                                       num_segments, 1)
 
             feat_fc_video_source = self.relu(feat_fc_video_source_3_1)  # 16 x 1 x 5 x 512
@@ -899,8 +898,8 @@ class TA3NTrainer(pl.LightningModule):
         log_output("feat_fc_video_target: ", feat_fc_video_target)
 
         if reverse:
-            feat_fc_video_source = GradReverse.apply(feat_fc_video_source, self.mu)
-            feat_fc_video_target = GradReverse.apply(feat_fc_video_target, self.mu)
+            feat_fc_video_source = GradReverse.apply(feat_fc_video_source, mu)
+            feat_fc_video_target = GradReverse.apply(feat_fc_video_target, mu)
 
         log_output("feat_fc_video_source: ", feat_fc_video_source)
         log_output("feat_fc_video_target: ", feat_fc_video_target)
@@ -924,8 +923,8 @@ class TA3NTrainer(pl.LightningModule):
             feat_all_target.append(pred_fc_video_target[1].view((batch_target,) + pred_fc_video_target[1].size()[-1:]))
 
         # === adversarial branch (video-level) ===#
-        pred_fc_domain_video_source = self.domain_classifier_video(feat_fc_video_source, self.beta)
-        pred_fc_domain_video_target = self.domain_classifier_video(feat_fc_video_target, self.beta)
+        pred_fc_domain_video_source = self.domain_classifier_video(feat_fc_video_source, beta)
+        pred_fc_domain_video_target = self.domain_classifier_video(feat_fc_video_target, beta)
         log_output("pred_fc_domain_video_source: ", pred_fc_domain_video_source)
         log_output("pred_fc_domain_video_target: ", pred_fc_domain_video_target)
 
@@ -982,6 +981,11 @@ class TA3NTrainer(pl.LightningModule):
 
         return optimizer
 
+    def adjust_learning_rate(self, optimizer, decay):
+        """Sets the learning rate to the initial LR decayed by 10 """
+        for param_group in optimizer.param_groups:
+            param_group['lr'] /= decay
+
     def adjust_learning_rate_loss(self, optimizer, decay, stat_current, stat_previous, op):
         ops = {'>': (lambda x, y: x > y), '<': (lambda x, y: x < y), '>=': (lambda x, y: x >= y),
                '<=': (lambda x, y: x <= y)}
@@ -989,42 +993,19 @@ class TA3NTrainer(pl.LightningModule):
             for param_group in optimizer.param_groups:
                 param_group['lr'] /= decay
 
+    def adjust_learning_rate_dann(self, optimizer, p):
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = self.lr / (1. + 10 * p) ** 0.75
+
     def get_parameters_watch_list(self):
-        """
-		Update this list for parameters to watch while training (ie log with MLFlow)
-		"""
+        """Update this list for parameters to watch while training (ie log with MLFlow)"""
+
         return {
             "alpha": self.alpha,
             "beta": self.beta[0],
             "mu": self.mu,
             "last_epoch": self.current_epoch,
         }
-
-    def _update_batch_epoch_factors(self, batch_id):
-        self._init_epochs = 0
-        if self.current_epoch >= self._init_epochs:
-            delta_epoch = self.current_epoch - self._init_epochs
-            p = (batch_id + delta_epoch * self.batch_size[0]) / (
-                    self.epochs * self.batch_size[0]
-            )
-            beta_dann = 2. / (1. + np.exp(-1.0 * p)) - 1
-            self._grow_fact = 2.0 / (1.0 + np.exp(-10 * p)) - 1
-
-            self.beta = [beta_dann if self.beta[i] < 0 else self.beta[i] for i in
-                         range(len(self.beta))]  # replace the default beta if value < 0
-            if self.dann_warmup:
-                beta_new = [beta_dann * self.beta[i] for i in range(len(self.beta))]
-            else:
-                beta_new = self.beta
-            self.beta = beta_new
-
-            if self.lr_adaptive == 'dann':
-                for param_group in self.optimizers().param_groups:
-                    param_group['lr'] /= p
-
-        self._adapt_lambda = True
-        if self._adapt_lambda:
-            self.lamb_da = self._init_lambda * self._grow_fact
 
     def compute_loss(self, batch, split_name="V"):
         ((source_data, source_label, _), (target_data, target_label, _)) = batch
@@ -1033,16 +1014,15 @@ class TA3NTrainer(pl.LightningModule):
         target_size_ori = target_data.size()  # original shape
         batch_source_ori = source_size_ori[0]
         batch_target_ori = target_size_ori[0]
+
         # add dummy tensors to keep the same batch size for each epoch (for the last epoch)
         if batch_source_ori < self.batch_size[0]:
             source_data_dummy = torch.zeros(self.batch_size[0] - batch_source_ori, source_size_ori[1],
-                                            source_size_ori[2])
-            source_data_dummy = source_data_dummy.type_as(source_data)
+                                            source_size_ori[2]).type_as(source_data)
             source_data = torch.cat((source_data, source_data_dummy))
         if batch_target_ori < self.batch_size[1]:
             target_data_dummy = torch.zeros(self.batch_size[1] - batch_target_ori, target_size_ori[1],
-                                            target_size_ori[2])
-            target_data_dummy = target_data_dummy.type_as(target_data)
+                                            target_size_ori[2]).type_as(target_data)
             target_data = torch.cat((target_data, target_data_dummy))
 
         source_label_verb = source_label[0]  # pytorch 0.4.X
@@ -1065,8 +1045,9 @@ class TA3NTrainer(pl.LightningModule):
         label_source_noun = source_label_noun_frame if self.baseline_type == 'frame' else source_label_noun  # determine the label for calculating the loss function
         label_target_noun = target_label_noun_frame if self.baseline_type == 'frame' else target_label_noun
 
-        attn_source, out_source, out_source_2, pred_domain_source, feat_source, attn_target, out_target, out_target_2, pred_domain_target, feat_target = self(
-            source_data, target_data, is_train=True, reverse=False)
+        attn_source, out_source, out_source_2, pred_domain_source, feat_source, attn_target, \
+        out_target, out_target_2, pred_domain_target, feat_target = self.forward(
+            source_data, target_data, self.beta_new, self.mu, is_train=True, reverse=False)
 
         attn_source, out_source, out_source_2, pred_domain_source, feat_source = removeDummy(attn_source, out_source,
                                                                                              out_source_2,
@@ -1078,7 +1059,8 @@ class TA3NTrainer(pl.LightningModule):
                                                                                              pred_domain_target,
                                                                                              feat_target,
                                                                                              batch_target_ori)
-
+        # ====== calculate the loss function ======#
+        # 1. calculate the classification loss
         out_verb = out_source[0]
         out_noun = out_source[1]
         label_verb = label_source_verb
@@ -1165,14 +1147,9 @@ class TA3NTrainer(pl.LightningModule):
                     pred_domain_target_single = pred_domain_target[l].view(-1, pred_domain_target[l].size()[-1])
 
                     # prepare domain labels
-                    source_domain_label = torch.zeros(pred_domain_source_single.size(0)).long()
-                    source_domain_label = source_domain_label.type_as(source_data)
-                    target_domain_label = torch.ones(pred_domain_target_single.size(0)).long()
-                    source_domain_label = source_domain_label.type_as(source_domain_label)
-                    source_domain_label = source_domain_label.type_as(target_domain_label)
+                    source_domain_label = torch.zeros(pred_domain_source_single.size(0)).type_as(source_data).long()
+                    target_domain_label = torch.ones(pred_domain_target_single.size(0)).type_as(source_data).long()
                     domain_label = torch.cat((source_domain_label, target_domain_label), 0)
-
-                    domain_label = domain_label
 
                     pred_domain = torch.cat((pred_domain_source_single, pred_domain_target_single), 0)
                     pred_domain_all.append(pred_domain)
@@ -1180,8 +1157,7 @@ class TA3NTrainer(pl.LightningModule):
 
                     if self.pred_normalize == 'Y':  # use the uncertainly method (in construction......)
                         pred_domain = pred_domain / pred_domain.var().log()
-                    loss_adversarial_single = self.criterion_domain(pred_domain,
-                                                                    domain_label.type_as(pred_domain).long())
+                    loss_adversarial_single = self.criterion_domain(pred_domain, domain_label)
 
                     loss_adversarial += loss_adversarial_single
 
@@ -1249,27 +1225,82 @@ class TA3NTrainer(pl.LightningModule):
         log_output("Prec@1 Action: ", prec1_action)
         log_output("Prec@5 Action: ", prec5_action)
 
-        return loss_classification, loss_adversarial, log_metrics
+        # return loss_classification, loss_adversarial, log_metrics
+        return loss, loss_classification, loss_adversarial, log_metrics
+
+    # def _update_batch_epoch_factors(self, batch_id):
+    #     self._init_epochs = 0
+    #     if self.current_epoch >= self._init_epochs:
+    #         delta_epoch = self.current_epoch - self._init_epochs
+    #         p = (batch_id + delta_epoch * self.batch_size[0]) / (
+    #                 self.epochs * self.batch_size[0]
+    #         )
+    #         beta_dann = 2. / (1. + np.exp(-1.0 * p)) - 1
+    #         self._grow_fact = 2.0 / (1.0 + np.exp(-10 * p)) - 1
+    #
+    #         self.beta = [beta_dann if self.beta[i] < 0 else self.beta[i] for i in
+    #                      range(len(self.beta))]  # replace the default beta if value < 0
+    #         if self.dann_warmup:
+    #             beta_new = [beta_dann * self.beta[i] for i in range(len(self.beta))]
+    #         else:
+    #             beta_new = self.beta
+    #         self.beta = beta_new
+    #
+    #         if self.lr_adaptive == 'dann':
+    #             for param_group in self.optimizers().param_groups:
+    #                 param_group['lr'] /= p
+    #
+    #     self._adapt_lambda = True
+    #     if self._adapt_lambda:
+    #         self.lamb_da = self._init_lambda * self._grow_fact
+
+    def _update_batch_epoch_factors(self, batch_id):
+        # setup hyperparameters
+        loss_c_current = 999  # random large number
+        loss_c_previous = 999  # random large number
+
+        # start_steps = (self.current_epoch + 1) * len(self.trainer.train_dataloader)
+        start_steps = len(self.trainer.train_dataloader)
+        total_steps = self.epochs * len(self.trainer.train_dataloader)
+        p = float(self.global_step + start_steps) / total_steps
+        self.beta_dann = 2. / (1. + np.exp(-1.0 * p)) - 1
+        self.beta = [self.beta_dann if self.beta[i] < 0 else self.beta[i] for i in
+                     range(len(self.beta))]  # replace the default beta if value < 0
+        if self.dann_warmup:
+            self.beta_new = [self.beta_dann * self.beta[i] for i in range(len(self.beta))]
+        else:
+            self.beta_new = self.beta
+
+        # print("i+start_steps: {}, total_steps: {}, p :{}, beta_new: {}".format(float(self.global_step + start_steps), total_steps, p, self.beta_new))
+        # print("lr: {}, alpha: {}, mu: {}".format(self.optimizers().param_groups[0]['lr'], self.alpha, self.mu))
+
+        ## schedule for learning rate
+        if self.lr_adaptive == 'loss':
+            self.adjust_learning_rate_loss(self.optimizers(), self.lr_decay, loss_c_current, loss_c_previous, '>')
+        elif self.lr_adaptive is None:
+            if self.global_step in [i * start_steps for i in self.lr_steps]:
+                self.adjust_learning_rate(self.optimizers(), self.lr_decay)
+
+        if self.lr_adaptive == 'dann':
+            self.adjust_learning_rate_dann(self.optimizers(), p)
+
+        self.alpha = 2 / (1 + math.exp(-1 * (
+            self.current_epoch) / self.epochs)) - 1 if self.alpha < 0 else self.alpha
 
     def training_step(self, train_batch, batch_idx):
+        """Automatically called by lightning while training a single batch
+
+        Args:
+            train_batch: an item of the dataloader(s) passed with the trainer
+            batch_idx: the batch index (which batch is currently being trained)
+        Returns:
+            The loss(es) calculated after performing an optimiser step
         """
-		Automatically called by lightning while training a single batch
-		Args:
-			train_batch: an item of the dataloader(s) passed with the trainer
-			batch_idx: the batch index (which batch is currently being trained)
-		Returns:
-			The loss(es) caluclated after performing an optimiser step
-		"""
+
         self._update_batch_epoch_factors(batch_idx)
 
-        task_loss, adv_loss, log_metrics = self.compute_loss(train_batch, split_name="T")
-        if self.current_epoch < self._init_epochs:
-            # init phase doesn't use few-shot learning
-            # ad-hoc decision but makes models more comparable between each other
-            loss = task_loss
-        else:
-            loss = task_loss + self.lamb_da * adv_loss
-        loss = log_metrics['Loss Total']
+        loss, task_loss, adv_loss, log_metrics = self.compute_loss(train_batch, split_name="T")
+
         log_metrics = get_aggregated_metrics_from_dict(log_metrics)
         log_metrics.update(get_metrics_from_parameter_dict(self.get_parameters_watch_list(), loss.device))
         log_metrics["T_total_loss"] = loss
@@ -1302,21 +1333,21 @@ class TA3NTrainer(pl.LightningModule):
 
     def multitask_accuracy(self, outputs, labels, topk=(1,)):
         """
-		Args:
-			outputs: tuple(torch.FloatTensor), each tensor should be of shape
-				[batch_size, class_count], class_count can vary on a per task basis, i.e.
-				outputs[i].shape[1] can be different to outputs[j].shape[j].
-			labels: tuple(torch.LongTensor), each tensor should be of shape [batch_size]
-			topk: tuple(int), compute accuracy at top-k for the values of k specified
-				in this parameter.
-		Returns:
-			tuple(float), same length at topk with the corresponding accuracy@k in.
-		"""
+        Args:
+            outputs: tuple(torch.FloatTensor), each tensor should be of shape
+                [batch_size, class_count], class_count can vary on a per task basis, i.e.
+                outputs[i].shape[1] can be different to outputs[j].shape[j].
+            labels: tuple(torch.LongTensor), each tensor should be of shape [batch_size]
+            topk: tuple(int), compute accuracy at top-k for the values of k specified
+                in this parameter.
+        Returns:
+            tuple(float), same length at topk with the corresponding accuracy@k in.
+        """
+
         max_k = int(np.max(topk))
         task_count = len(outputs)
         batch_size = labels[0].size(0)
-        all_correct = torch.zeros(max_k, batch_size).type(torch.ByteTensor)
-        all_correct = all_correct.type_as(labels[0])
+        all_correct = torch.zeros(max_k, batch_size).type(torch.ByteTensor).type_as(labels[0])
 
         for output, label in zip(outputs, labels):
             _, max_k_idx = output.topk(max_k, dim=1, largest=True, sorted=True)
@@ -1333,15 +1364,14 @@ class TA3NTrainer(pl.LightningModule):
         return tuple(accuracies)
 
     def validation_step(self, batch, batch_idx):
+        """Automatically called by lightning while validating a single batch
+
+        Args:
+            batch: an item of the dataloader(s) passed with the trainer
+            batch_idx: the batch index (which batch is currently being validated)
+        Returns:
+            The loss(es) calculated
         """
-		Automatically called by lightning while validating a single batch
-		Args:
-			batch: an item of the dataloader(s) passed with the trainer
-			batch_idx: the batch index (which batch is currently being validated)
-			dataset_idx: in case of multiple dataloaders, this indicates which dataloader is being used
-		Returns:
-			The loss(es) caluclated 
-		"""
 
         (val_data, val_label, _) = batch
         i = batch_idx
@@ -1351,15 +1381,13 @@ class TA3NTrainer(pl.LightningModule):
 
         # add dummy tensors to keep the same batch size for each epoch (for the last epoch)
         if batch_val_ori < self.batch_size[0]:
-            val_data_dummy = torch.zeros(self.batch_size[0] - batch_val_ori, val_size_ori[1], val_size_ori[2])
-            val_data_dummy = val_data_dummy.type_as(val_data)
+            val_data_dummy = torch.zeros(self.batch_size[0] - batch_val_ori, val_size_ori[1], val_size_ori[2]).type_as(val_data)
             val_data = torch.cat((val_data, val_data_dummy))
 
         # add dummy tensors to make sure batch size can be divided by gpu #
         gpu_count = 1
         if val_data.size(0) % gpu_count != 0:
-            val_data_dummy = torch.zeros(gpu_count - val_data.size(0) % gpu_count, val_data.size(1), val_data.size(2))
-            val_data_dummy = val_data_dummy.type_as(val_data)
+            val_data_dummy = torch.zeros(gpu_count - val_data.size(0) % gpu_count, val_data.size(1), val_data.size(2)).type_as(val_data)
             val_data = torch.cat((val_data, val_data_dummy))
 
         val_label_verb = val_label[0]
@@ -1373,8 +1401,10 @@ class TA3NTrainer(pl.LightningModule):
                     -1)  # expand the size for all the frames
 
             # compute output
-            _, _, _, _, _, attn_val, out_val, out_val_2, pred_domain_val, feat_val = self(val_data, val_data,
-                                                                                          is_train=False, reverse=False)
+            _, _, _, _, _, attn_val, out_val, out_val_2, pred_domain_val, feat_val = self.forward(val_data, val_data,
+                                                                                                  self.beta, self.mu,
+                                                                                                  is_train=False,
+                                                                                                  reverse=False)
 
             # ignore dummy tensors
             attn_val, out_val, out_val_2, pred_domain_val, feat_val = removeDummy(attn_val, out_val, out_val_2,
@@ -1432,17 +1462,15 @@ class TA3NTrainer(pl.LightningModule):
         return result_dict
 
     def validation_epoch_end(self, validation_step_outputs):
+        """Automatically called by lightning after validation ends for an epoch
+        Args:
+            validation_step_outputs: list of values returned by the validation_step after each batch
         """
-		Automatically called by lightning after validation ends for an epoch
-		Args:
-			validation_step_outputs: list of values returned by the validation_step after each batch
-		"""
 
         self.end_val = time.time()
         # evaluate on validation set
 
         if self.labels_available:
-
             self.losses_val = 0
             self.prec1_val = 0
             self.prec1_verb_val = 0
@@ -1491,14 +1519,14 @@ class TA3NTrainer(pl.LightningModule):
             self.best_prec1 = max(prec1, self.best_prec1)
 
     def test_step(self, batch, batch_idx):
+        """Automatically called by lightning while testing/infering on a batch
+
+        Args:
+            batch: an item of the dataloader(s) passed with the trainer
+            batch_idx: the batch index (which batch is currently being evaulated)
+        Returns:
+            The loss(es) caluclated
         """
-		Automatically called by lightning while testing/infering on a batch
-		Args:
-			batch: an item of the dataloader(s) passed with the trainer
-			batch_idx: the batch index (which batch is currently being evaulated)
-		Returns:
-			The loss(es) caluclated 
-		"""
 
         return self.validation_step(batch, batch_idx)
 
