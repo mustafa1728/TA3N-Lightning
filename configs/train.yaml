@@ -1,15 +1,15 @@
 TO_VALIDATE: False
-PATHS:
-  PATH_DATA_ROOT: "I:/Datasets/EgoAction/EPIC-100/frames_rgb_flow/feature/"
-  PATH_LABELS_ROOT: "I:/Datasets/EgoAction/EPIC-100/annotations/labels_train_test/val/"
-  PATH_DATA_SOURCE: "I:/Datasets/EgoAction/EPIC-100/frames_rgb_flow/feature/source_val"
-  PATH_DATA_TARGET: "I:/Datasets/EgoAction/EPIC-100/frames_rgb_flow/feature/target_val"
+#PATHS:
+#  PATH_DATA_ROOT: "I:/Datasets/EgoAction/EPIC-100/frames_rgb_flow/feature/"
+#  PATH_LABELS_ROOT: "I:/Datasets/EgoAction/EPIC-100/annotations/labels_train_test/val/"
+#  PATH_DATA_SOURCE: "I:/Datasets/EgoAction/EPIC-100/frames_rgb_flow/feature/source_val"
+#  PATH_DATA_TARGET: "I:/Datasets/EgoAction/EPIC-100/frames_rgb_flow/feature/target_val"
 DATASET:
   DATASET: "epic"
   MODALITY: "ALL"
 TRAINER:
-  MIN_EPOCHS: 10
-  MAX_EPOCHS: 20
+#  MIN_EPOCHS: 1
+  MAX_EPOCHS: 30
   ACCELERATOR: 'dp'
-TESTER:
-  TEST_TARGET_DATA: "I:/Datasets/EgoAction/EPIC-100/frames_rgb_flow/feature/target_val"
+#TESTER:
+#  TEST_TARGET_DATA: "I:/Datasets/EgoAction/EPIC-100/frames_rgb_flow/feature/target_val"
