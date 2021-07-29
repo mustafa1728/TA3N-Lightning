@@ -12,6 +12,7 @@ from colorama import Fore, Back, Style
 
 init(autoreset=True)
 
+
 class VideoRecord(object):
     def __init__(self, i, row, num_segments):
         self._data = row
@@ -28,7 +29,7 @@ class VideoRecord(object):
 
     @property
     def num_frames(self):
-        return int(self._seg)#self._data[1])
+        return int(self._seg)  # self._data[1])
 
     @property
     def label(self):
@@ -80,9 +81,9 @@ class TSNDataSet(data.Dataset):
         self.num_dataload = num_dataload
 
         if self.modality == 'RGBDiff' or self.modality == 'RGBDiff2' or self.modality == 'RGBDiffplus':
-            self.new_length += 1 # Diff needs one more image to calculate diff
+            self.new_length += 1  # Diff needs one more image to calculate diff
 
-        self._parse_list() # read all the video files
+        self._parse_list()  # read all the video files
 
     # def _load_feature(self, directory, idx):
     #     if self.modality == 'RGB' or self.modality == 'RGBDiff' or self.modality == 'RGBDiff2' or self.modality == 'RGBDiffplus':
@@ -100,22 +101,22 @@ class TSNDataSet(data.Dataset):
     #         return [x_feat, y_feat]
 
     def load_features_noun(self, idx, segment):
-        return torch.from_numpy(np.expand_dims(self.noun_data[idx][segment-1], axis=0)).float()
+        return torch.from_numpy(np.expand_dims(self.noun_data[idx][segment - 1], axis=0)).float()
 
     def _load_feature(self, idx, segment):
-         return torch.from_numpy(np.expand_dims(self.data[idx][segment-1], axis=0)).float()
+        return torch.from_numpy(np.expand_dims(self.data[idx][segment - 1], axis=0)).float()
 
     def _parse_list(self):
         try:
             label_file = pd.read_pickle(self.list_file).reset_index()
-            self.labels_available =(("verb_class" in label_file) and ("noun_class" in label_file))
+            self.labels_available = (("verb_class" in label_file) and ("noun_class" in label_file))
         except:
             raise Exception("Cannot read pickle, {},containing labels".format(self.list_file))
-        self.video_list = [VideoRecord(i,row[1], self.total_segments) for i,row in enumerate(label_file.iterrows())]
+        self.video_list = [VideoRecord(i, row[1], self.total_segments) for i, row in enumerate(label_file.iterrows())]
         # repeat the list if the length is less than num_dataload (especially for target data)
-        n_repeat = self.num_dataload//len(self.video_list)
-        n_left = self.num_dataload%len(self.video_list)
-        self.video_list = self.video_list*n_repeat + self.video_list[:n_left]
+        n_repeat = self.num_dataload // len(self.video_list)
+        n_left = self.num_dataload % len(self.video_list)
+        self.video_list = self.video_list * n_repeat + self.video_list[:n_left]
 
     def _sample_indices(self, record):
         """
@@ -123,10 +124,11 @@ class TSNDataSet(data.Dataset):
         :param record: VideoRecord
         :return: list
         """
-        #np.random.seed(1)
+        # np.random.seed(1)
         average_duration = (record.num_frames - self.new_length + 1) // self.num_segments
         if average_duration > 0:
-            offsets = np.multiply(list(range(self.num_segments)), average_duration) + randint(average_duration, size=self.num_segments)
+            offsets = np.multiply(list(range(self.num_segments)), average_duration) + randint(average_duration,
+                                                                                              size=self.num_segments)
         elif record.num_frames > self.num_segments:
             offsets = np.sort(randint(record.num_frames - self.new_length + 1, size=self.num_segments))
         else:
@@ -150,18 +152,18 @@ class TSNDataSet(data.Dataset):
 
         if record.num_frames >= num_min:
             tick = float(num_select) / float(self.num_segments)
-            offsets = np.array([int(tick / 2.0 + tick * float(x)) for x in range(self.num_segments)]) # pick the central frame in each segment
-        else: # the video clip is too short --> duplicate the last frame
+            offsets = np.array([int(tick / 2.0 + tick * float(x)) for x in
+                                range(self.num_segments)])  # pick the central frame in each segment
+        else:  # the video clip is too short --> duplicate the last frame
             id_select = np.array([x for x in range(num_select)])
             # expand to the length of self.num_segments with the last element
-            id_expand = np.ones(self.num_segments-num_select,dtype=int)*id_select[id_select[0]-1]
+            id_expand = np.ones(self.num_segments - num_select, dtype=int) * id_select[id_select[0] - 1]
             offsets = np.append(id_select, id_expand)
 
         return offsets + 1
 
     def __getitem__(self, index):
         record = self.video_list[index]
-
 
         if not self.test_mode:
             segment_indices = self._sample_indices(record) if self.random_shift else self._get_val_indices(record)
@@ -202,7 +204,7 @@ class TSNDataSet(data.Dataset):
             process_data_noun = torch.stack(frames)
             process_data = [process_data_verb, process_data_noun]
         else:
-            process_data =process_data_verb
+            process_data = process_data_verb
 
         return process_data, record.label, record.segment_id
 
