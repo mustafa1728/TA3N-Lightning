@@ -18,8 +18,8 @@ _C.TO_VALIDATE = False  # choices = [True, False]
 # Paths
 # -----------------------------------------------------------------------------
 _C.PATHS = CN()
-_C.PATHS.PATH_DATA_ROOT = "I:/Datasets/EgoAction/EPIC-100/frames_rgb_flow/feature/"
-_C.PATHS.PATH_LABELS_ROOT = "I:/Datasets/EgoAction/EPIC-100/annotations/labels_train_test/val/"
+_C.PATHS.PATH_DATA_ROOT = "F:/Datasets/EgoAction/EPIC100/frames_rgb_flow/feature/"
+_C.PATHS.PATH_LABELS_ROOT = "F:/Datasets/EgoAction/EPIC100/annotations/labels_train_test/val/"
 _C.PATHS.PATH_EXP_ROOT = "model/action-model/"  # directory where the checkpoints are to be stored. Depends on users
 
 _C.PATHS.DATASET_SOURCE = "source_val"  # depends on users
