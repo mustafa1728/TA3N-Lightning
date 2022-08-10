@@ -74,7 +74,7 @@ class TRNRelationModuleMultiScale(pl.LightningModule):
 
             self.fc_fusion_scales += [fc_fusion]
 
-        self.log('Multi-Scale Temporal Relation Network Module in use', ['%d-frame relation' % i for i in self.scales])
+        # self.log('Multi-Scale Temporal Relation Network Module in use', ['%d-frame relation' % i for i in self.scales])
 
     def forward(self, input):
         # the first one is the largest scale

@@ -94,7 +94,7 @@ def main():
 
     target_loader_test = get_test_data_loaders(cfg)
     log_info("Target Results: ")
-    trainer.test(test_dataloaders=target_loader_test, verbose=cfg.TESTER.VERBOSE)
+    trainer.test(dataloaders=target_loader_test, verbose=cfg.TESTER.VERBOSE)
 
     # ========== Logging ========#
     log_info('Training complete')
